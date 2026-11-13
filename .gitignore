@@ -1,6 +1,7 @@
 .DS_Store
 *~
 *.bin
+*.bak
 *.disasm
 *.elf
 *.hex
@@ -9,9 +10,15 @@ mri.log
 gdb.txt
 deploy
 debug
+planner.s
+/.externalToolBuilders/
+/.settings/
+/.cproject
+/.project
 /mbed/src/Debug/
 /mbed/src/Release/
 /LPC1768/
+/STM32F407xG/
 /mbed/drop/
 /gcc-arm-none-eabi/
 /BuildShell
@@ -22,3 +29,6 @@ debug
 /win_install.log
 /linux_install.log
 /src/default_excludes.mk
+
+# Разрешаем загрузку прошивок загрузчика из папки DFU-Upload
+!/DFU-Upload/*.bin

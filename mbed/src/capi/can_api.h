@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *     http://apache.org
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,34 +16,39 @@
 #ifndef MBED_CAN_API_H
 #define MBED_CAN_API_H
 
-#include "device.h"
-
-#if DEVICE_CAN
-
 #include "PinNames.h"
 #include "PeripheralNames.h"
-#include "can_helper.h"
+#include "stm32f4xx_hal.h"
+#include <stdint.h>
+#include <stdbool.h>
+
+typedef struct {
+    uint32_t id;
+    uint8_t  data[8];
+    uint8_t  len;
+} can_bridge_msg_t;
+
+// Fast GPIO configuration structure for ultra-speed ISR routing
+typedef struct {
+    GPIO_TypeDef* gpio_port; // Memory pointer to hardware port (e.g. GPIOA)
+    uint32_t      set_mask;  // Pre-calculated BSRR mask to turn pin HIGH
+    uint32_t      rst_mask;  // Pre-calculated BSRR mask to turn pin LOW
+} can_fast_pin_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+    uint8_t can_hardware_init(uint32_t baudrate);
+    uint8_t can_hardware_write(can_bridge_msg_t *msg);
+    void    can_hardware_free(void);
+    void CAN1_RX0_IRQHandler(void);
 
-typedef struct can_s can_t;
-
-void          can_init     (can_t *obj, PinName rd, PinName td);
-void          can_free     (can_t *obj);
-int           can_frequency(can_t *obj, int hz);
-int           can_write    (can_t *obj, CAN_Message, int cc);
-int           can_read     (can_t *obj, CAN_Message *msg);
-void          can_reset    (can_t *obj);
-unsigned char can_rderror  (can_t *obj);
-unsigned char can_tderror  (can_t *obj);
-void          can_monitor  (can_t *obj, int silent);
-
+    // Global configuration variables shared with CanBridge.cpp
+    extern can_fast_pin_t can_endstop_x;
+    extern can_fast_pin_t can_endstop_z;
+    extern bool           can_rx_endstops_enable;
 #ifdef __cplusplus
-};
+}
 #endif
 
-#endif    // MBED_CAN_API_H
-
-#endif
+#endif // MBED_CAN_API_H

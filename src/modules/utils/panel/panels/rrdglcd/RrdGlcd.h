@@ -50,8 +50,6 @@ public:
 
     // copy the bits in g, of X line size pixels, to x, y in frame buffer
     void renderGlyph(int x, int y, const uint8_t *g, int pixelWidth, int pixelHeight);
-    // TODO: Implement new graphics functions for RRDGLCD
-    // void setCursorPX(int x, int y);
 
 private:
     Pin cs;

@@ -5,6 +5,9 @@
       You should have received a copy of the GNU General Public License along with Smoothie. If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "stm32f4xx.h"
+#undef ADC
+
 #include "Thermistor.h"
 #include "libs/Kernel.h"
 #include "libs/Pin.h"
@@ -144,7 +147,7 @@ void Thermistor::UpdateConfig(uint16_t module_checksum, uint16_t name_checksum)
         std::vector<float> trl= parse_number_list(rtc.c_str());
         if(trl.size() != 6) {
             // punt we need 6 numbers, three pairs
-            printf("Error in config need 6 numbers for Steinhart-Hart\n");
+            THEKERNEL->streams->printf("Error in config need 6 numbers for Steinhart-Hart\n");
             this->bad_config= true;
             return;
         }
@@ -160,7 +163,7 @@ void Thermistor::UpdateConfig(uint16_t module_checksum, uint16_t name_checksum)
         std::vector<float> v= parse_number_list(coef.c_str());
         if(v.size() != 3) {
             // punt we need 6 numbers, three pairs
-            printf("Error in config need 3 Steinhart-Hart coefficients\n");
+            THEKERNEL->streams->printf("Error in config need 3 Steinhart-Hart coefficients\n");
             this->bad_config= true;
             return;
         }
@@ -175,7 +178,7 @@ void Thermistor::UpdateConfig(uint16_t module_checksum, uint16_t name_checksum)
         calc_jk();
 
     }else if(!found) {
-        printf("Error in config need rt_curve, coefficients, beta or a valid predefined thermistor defined\n");
+        THEKERNEL->streams->printf("Error in config need rt_curve, coefficients, beta or a valid predefined thermistor defined\n");
         this->bad_config= true;
         return;
     }

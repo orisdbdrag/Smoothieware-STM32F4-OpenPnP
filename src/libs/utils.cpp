@@ -7,8 +7,8 @@
 
 #include "libs/Kernel.h"
 #include "libs/utils.h"
-#include "system_LPC17xx.h"
-#include "LPC17xx.h"
+//#include "system_LPC17xx.h"
+//#include "LPC17xx.h"
 #include "utils.h"
 
 #include <string>
@@ -145,26 +145,28 @@ string get_arguments( const string& possible_command )
 // Returns true if the file exists
 bool file_exists( const string file_name )
 {
-    bool exists = false;
+    return false; // hopefully this pre-empts all fs related calls
+/*    bool exists = false;
     FILE *lp = fopen(file_name.c_str(), "r");
     if(lp) {
         exists = true;
     }
     fclose(lp);
-    return exists;
+    return exists; */
 }
 
 // Prepares and executes a watchdog reset for dfu or reboot
 void system_reset( bool dfu )
 {
+    /* STM32 may not use this mechanism to enter DFU, remove for now
     if(dfu) {
         LPC_WDT->WDCLKSEL = 0x1;                // Set CLK src to PCLK
         uint32_t clk = SystemCoreClock / 16;    // WD has a fixed /4 prescaler, PCLK default is /4
         LPC_WDT->WDTC = 1 * (float)clk;         // Reset in 1 second
         LPC_WDT->WDMOD = 0x3;                   // Enabled and Reset
         LPC_WDT->WDFEED = 0xAA;                 // Kick the dog!
-        LPC_WDT->WDFEED = 0x55;
-    } else {
+        LPC_WDT->WDFEED = 0x55; 
+    } else */ {
         NVIC_SystemReset();
     }
 }

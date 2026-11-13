@@ -14,8 +14,11 @@
 #include "libs/Hook.h"
 #include "libs/Pin.h"
 
-#include "system_LPC17xx.h" // for SystemCoreClock
+//#include "system_LPC17xx.h" // for SystemCoreClock
+#include "system_stm32f4xx.h"
 #include <math.h>
+
+#define SLOWTICKER_PRESCALER    (1 << 13)
 
 class SlowTicker : public Module{
     public:
@@ -30,7 +33,7 @@ class SlowTicker : public Module{
         // TODO replace this with std::function()
         template<typename T> Hook* attach( uint32_t frequency, T *optr, uint32_t ( T::*fptr )( uint32_t ) ){
             Hook* hook = new Hook();
-            hook->interval = floorf((SystemCoreClock/4)/frequency);
+            hook->interval = floorf(((SystemCoreClock/2) / SLOWTICKER_PRESCALER)/frequency);
             hook->attach(optr, fptr);
             hook->countdown = hook->interval;
 

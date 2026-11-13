@@ -1,3 +1,5 @@
+
+/*
 #ifndef _DFU_H
 #define _DFU_H
 
@@ -30,7 +32,7 @@
 #define DFU_INTERFACE_PROTOCOL_DFUMODE  0x02
 
 #define DFU_BMATTRIBUTES_WILLDETACH         (1<<3)
-#define DFU_BMATTRIBUTES_MANIFEST_TOLERANT  (1<<2)  /* device keeps talking while flashing? */
+#define DFU_BMATTRIBUTES_MANIFEST_TOLERANT  (1<<2)  //
 #define DFU_BMATTRIBUTES_CANUPLOAD          (1<<1)
 #define DFU_BMATTRIBUTES_CANDOWNLOAD        (1<<0)
 
@@ -87,3 +89,6 @@ protected:
 };
 
 #endif /* _DFU_H */
+
+
+*/

@@ -5,10 +5,14 @@
       You should have received a copy of the GNU General Public License along with Smoothie. If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "cmsis.h"
+#undef ADC
+
 #include "libs/Kernel.h"
 #include "libs/Module.h"
 #include "libs/Config.h"
 #include "libs/nuts_bolts.h"
+#include "libs/gpio.h"
 #include "libs/SlowTicker.h"
 #include "libs/Adc.h"
 #include "libs/StreamOutputPool.h"
@@ -29,7 +33,8 @@
 #include "Configurator.h"
 #include "SimpleShell.h"
 #include "TemperatureControlPublicAccess.h"
-#include "PlayerPublicAccess.h"
+
+
 
 #ifndef NO_TOOLS_LASER
 #include "Laser.h"
@@ -42,6 +47,9 @@
 #include <string>
 
 #define laser_checksum CHECKSUM("laser")
+#define baud_rate_setting_checksum CHECKSUM("baud_rate")
+#define uart0_checksum             CHECKSUM("uart0")
+#define serial_hw_handshake_checksum                CHECKSUM("rts_cts_handshake")
 
 #define base_stepping_frequency_checksum            CHECKSUM("base_stepping_frequency")
 #define microseconds_per_step_pulse_checksum        CHECKSUM("microseconds_per_step_pulse")
@@ -58,15 +66,48 @@ Kernel::Kernel()
     halted = false;
     feed_hold = false;
     enable_feed_hold = false;
-    bad_mcu= true;
-    stop_request= false;
+    normal_power_on_reset = true;
+    unsigned int rcc_csr = RCC->CSR;
+
+    if (rcc_csr & RCC_CSR_BORRSTF) {
+        reset_info += "BROWN-OUT ";
+    }
+    if (rcc_csr & RCC_CSR_PINRSTF) {
+        reset_info += "PIN ";
+    }
+    if (rcc_csr & RCC_CSR_PORRSTF) {
+        reset_info += "POWER-ON ";
+    }
+    if (rcc_csr & RCC_CSR_SFTRSTF) {
+        reset_info += "SOFTWARE-RESET ";
+    }
+    if (rcc_csr & RCC_CSR_IWDGRSTF) {
+        reset_info += "INDEPENDANT-WATCHDOG ";
+    }
+    if (rcc_csr & RCC_CSR_WWDGRSTF) {
+        reset_info += "WINDOW-WATCHDOG ";
+    }
+    if (rcc_csr & RCC_CSR_LPWRRSTF) {
+        reset_info += "LOW-POWER ";
+    }
+
+    if ( !(RCC->CSR & RCC_CSR_PORRSTF) ) // Not Power on reset?
+        normal_power_on_reset = false;
+    RCC->CSR = RCC_CSR_RMVF;
+
 
     instance = this; // setup the Singleton instance of the kernel
 
     // serial first at fixed baud rate (DEFAULT_SERIAL_BAUD_RATE) so config can report errors to serial
     // Set to UART0, this will be changed to use the same UART as MRI if it's enabled
-    this->serial = new SerialConsole(0);
-    this->serial->init_uart(DEFAULT_SERIAL_BAUD_RATE);
+    //this->serial = new SerialConsole(PD_5, PD_6, NC, NC, DEFAULT_SERIAL_BAUD_RATE);
+
+
+    //GPIO rs422en = GPIO(PC_1);
+    //rs422en.write(1);
+
+
+    //this->serial = new SerialConsole(PA_9, PA_10, NC, NC, DEFAULT_SERIAL_BAUD_RATE);
 
     // Config next, but does not load cache yet
     this->config = new Config();
@@ -75,7 +116,10 @@ Kernel::Kernel()
     this->config->config_cache_load();
 
     // now config is loaded we can do normal setup for serial based on config
-    delete this->serial;
+
+    // ..but we have to wait until it is all transmitted
+    
+    //delete this->serial;
     this->serial = NULL;
 
     this->streams = new StreamOutputPool();
@@ -89,23 +133,22 @@ Kernel::Kernel()
 #if MRI_ENABLE != 0
     switch( __mriPlatform_CommUartIndex() ) {
         case 0:
-            this->serial = new(AHB0) SerialConsole(0);
+            this->serial = new(AHB0) SerialConsole(PD_5, PD_6, NC, NC, this->config->value(uart0_checksum, baud_rate_setting_checksum)->by_default(DEFAULT_SERIAL_BAUD_RATE)->as_number());
             break;
         case 1:
-            this->serial = new(AHB0) SerialConsole(1);
+            // TODO STM32 fix uart pin mapping
+            //this->serial = new(AHB0) SerialConsole(  p13,   p14, this->config->value(uart0_checksum, baud_rate_setting_checksum)->by_default(DEFAULT_SERIAL_BAUD_RATE)->as_number());
             break;
         case 2:
-            this->serial = new(AHB0) SerialConsole(2);
+            //this->serial = new(AHB0) SerialConsole(  p28,   p27, this->config->value(uart0_checksum, baud_rate_setting_checksum)->by_default(DEFAULT_SERIAL_BAUD_RATE)->as_number());
             break;
         case 3:
-            this->serial = new(AHB0) SerialConsole(3);
+            //this->serial = new(AHB0) SerialConsole(   p9,   p10, this->config->value(uart0_checksum, baud_rate_setting_checksum)->by_default(DEFAULT_SERIAL_BAUD_RATE)->as_number());
             break;
     }
 #endif
-    // default
-    if(this->serial == NULL) {
-        this->serial = new(AHB0) SerialConsole(0);
-    }
+    
+    this->serial_hw_handshake = this->config->value( serial_hw_handshake_checksum )->by_default(0)->as_number();
 
     //some boards don't have leds.. TOO BAD!
     this->use_leds = !this->config->value( disable_leds_checksum )->by_default(false)->as_bool();
@@ -121,6 +164,27 @@ Kernel::Kernel()
     // we expect ok per line now not per G code, setting this to false will return to the old (incorrect) way of ok per G code
     this->ok_per_line = this->config->value( ok_per_line_checksum )->by_default(true)->as_bool();
 
+    switch (this->serial_hw_handshake) {
+    	case 0:
+    		 // No hardware flow control (Standard 2-wire UART: TX/RX only)
+            this->serial = new(AHB0) SerialConsole(PA_9, PA_10, NC, NC, this->config->value(uart0_checksum, baud_rate_setting_checksum)->by_default(DEFAULT_SERIAL_BAUD_RATE)->as_number());
+
+			break;
+			
+		case 1:
+			// Full Hardware Flow Control (RTS/CTS enabled for high-speed 4Mbps stability)
+			// Pinout tailored for standard STM32F4 UART1 hardware mapping:
+			// TX: PA_9, RX: PA_10, RTS: PA_12, CTS: PA_11
+            this->serial = new(AHB0) SerialConsole(PA_9, PA_10, PA_12, PA_11, this->config->value(uart0_checksum, baud_rate_setting_checksum)->by_default(DEFAULT_SERIAL_BAUD_RATE)->as_number());
+            break;
+            
+        case 2:
+        	// Partial Flow Control (RTS enabled, CTS disabled)
+        	// Uses custom mapping for independent outbound host flow control:
+        	// TX: PA_9, RX: PA_10, RTS: PA_5, CTS: NC (Not Connected)
+            this->serial = new(AHB0) SerialConsole(PA_9, PA_10, PA_5, NC, this->config->value(uart0_checksum, baud_rate_setting_checksum)->by_default(DEFAULT_SERIAL_BAUD_RATE)->as_number());
+            break;
+    }
     this->add_module( this->serial );
 
     // HAL stuff
@@ -132,27 +196,28 @@ Kernel::Kernel()
     // TODO : These should go into platform-specific files
     // LPC17xx-specific
     NVIC_SetPriorityGrouping(0);
-    NVIC_SetPriority(TIMER0_IRQn, 2);
-    NVIC_SetPriority(TIMER1_IRQn, 1);
-    NVIC_SetPriority(TIMER2_IRQn, 4);
-    NVIC_SetPriority(TIMER3_IRQn, 4);
+    NVIC_SetPriority(TIM7_IRQn, 2); // 0
+    NVIC_SetPriority(TIM8_TRG_COM_TIM14_IRQn, 1); // 1
+    NVIC_SetPriority(TIM6_DAC_IRQn, 4); // 2
     NVIC_SetPriority(PendSV_IRQn, 3);
+
+    NVIC_SetPriority(WWDG_IRQn, 1);
 
     // Set other priorities lower than the timers
     NVIC_SetPriority(ADC_IRQn, 5);
-    NVIC_SetPriority(USB_IRQn, 5);
+    NVIC_SetPriority(OTG_HS_IRQn, 5); // USB
 
     // If MRI is enabled
     if( MRI_ENABLE ) {
-        if( NVIC_GetPriority(UART0_IRQn) > 0 ) { NVIC_SetPriority(UART0_IRQn, 5); }
-        if( NVIC_GetPriority(UART1_IRQn) > 0 ) { NVIC_SetPriority(UART1_IRQn, 5); }
-        if( NVIC_GetPriority(UART2_IRQn) > 0 ) { NVIC_SetPriority(UART2_IRQn, 5); }
-        if( NVIC_GetPriority(UART3_IRQn) > 0 ) { NVIC_SetPriority(UART3_IRQn, 5); }
+        if( NVIC_GetPriority(USART1_IRQn) > 0 ) { NVIC_SetPriority(USART1_IRQn, 5); }
+        if( NVIC_GetPriority(USART2_IRQn) > 0 ) { NVIC_SetPriority(USART2_IRQn, 5); }
+        if( NVIC_GetPriority(USART3_IRQn) > 0 ) { NVIC_SetPriority(USART3_IRQn, 5); }
+        if( NVIC_GetPriority(UART4_IRQn) > 0 ) { NVIC_SetPriority(UART4_IRQn, 5); }
     } else {
-        NVIC_SetPriority(UART0_IRQn, 5);
-        NVIC_SetPriority(UART1_IRQn, 5);
-        NVIC_SetPriority(UART2_IRQn, 5);
-        NVIC_SetPriority(UART3_IRQn, 5);
+        NVIC_SetPriority(USART1_IRQn, 6);
+        NVIC_SetPriority(USART2_IRQn, 6);
+        NVIC_SetPriority(DMA2_Stream2_IRQn, 6); // DMA for USART1 rx
+        NVIC_SetPriority(DMA1_Stream5_IRQn, 6); // DMA for USART2 rx
     }
 
     // Configure the step ticker
@@ -181,12 +246,6 @@ std::string Kernel::get_query_string()
     bool ok = PublicData::get_value(endstops_checksum, get_homing_status_checksum, 0, &homing);
     if(!ok) homing = false;
     bool running = false;
-
-    // current Laser power
-    Laser *plaser= nullptr;
-#ifndef NO_TOOLS_LASER
-    PublicData::get_value(laser_checksum, (void *)&plaser);
-#endif
 
     str.append("<");
     if(halted) {
@@ -220,7 +279,7 @@ std::string Kernel::get_query_string()
         // deal with the ABC axis (E will be A)
         for (int i = A_AXIS; i < robot->get_number_registered_motors(); ++i) {
             // current actuator position
-            n = snprintf(buf, sizeof(buf), ",%1.4f", robot->actuators[i]->get_current_position());
+            n = snprintf(buf, sizeof(buf), ",%1.4f", robot->from_millimeters(robot->actuators[i]->get_current_position()));
             if(n > sizeof(buf)) n= sizeof(buf);
             str.append(buf, n);
         }
@@ -241,40 +300,37 @@ std::string Kernel::get_query_string()
         if(n > sizeof(buf)) n= sizeof(buf);
         str.append(buf, n);
 
-        if(plaser != nullptr) {
-            float lp= plaser->get_current_power();
-            n = snprintf(buf, sizeof(buf), "|L:%1.4f", lp);
-            if(n > sizeof(buf)) n= sizeof(buf);
-            str.append(buf, n);
-            float sr= robot->get_s_value();
-            n = snprintf(buf, sizeof(buf), "|S:%1.4f", sr);
-            if(n > sizeof(buf)) n= sizeof(buf);
-            str.append(buf, n);
-        }else{
-            // S is spindle RPM
-            float sr= robot->get_s_value();
-            n = snprintf(buf, sizeof(buf), "|S:%1.2f", sr);
-            if(n > sizeof(buf)) n= sizeof(buf);
-            str.append(buf, n);
-        }
+
+        // current Laser power
+        #ifndef NO_TOOLS_LASER
+            Laser *plaser= nullptr;
+            if(PublicData::get_value(laser_checksum, (void *)&plaser) && plaser != nullptr) {
+                float lp= plaser->get_current_power();
+                n = snprintf(buf, sizeof(buf), "|L:%1.4f", lp);
+                if(n > sizeof(buf)) n= sizeof(buf);
+                str.append(buf, n);
+                float sr= robot->get_s_value();
+                n = snprintf(buf, sizeof(buf), "|S:%1.4f", sr);
+                if(n > sizeof(buf)) n= sizeof(buf);
+                str.append(buf, n);
+            }
+        #endif
 
     } else {
         // return the last milestone if idle
         char buf[128];
         // machine position
-        int nmotors= robot->get_number_registered_motors();
-        float mpos[nmotors];
-        robot->get_axis_position(mpos, nmotors);
-        size_t n = snprintf(buf, sizeof(buf), "%1.4f,%1.4f,%1.4f", robot->from_millimeters(mpos[X_AXIS]), robot->from_millimeters(mpos[Y_AXIS]), robot->from_millimeters(mpos[Z_AXIS]));
+        Robot::wcs_t mpos = robot->get_axis_position();
+        size_t n = snprintf(buf, sizeof(buf), "%1.4f,%1.4f,%1.4f", robot->from_millimeters(std::get<X_AXIS>(mpos)), robot->from_millimeters(std::get<Y_AXIS>(mpos)), robot->from_millimeters(std::get<Z_AXIS>(mpos)));
         if(n > sizeof(buf)) n= sizeof(buf);
 
         str.append("|MPos:").append(buf, n);
 
 #if MAX_ROBOT_ACTUATORS > 3
         // deal with the ABC axis (E will be A)
-        for (int i = A_AXIS; i < nmotors; ++i) {
-            // machine position
-            n = snprintf(buf, sizeof(buf), ",%1.4f", mpos[i]);
+        for (int i = A_AXIS; i < robot->get_number_registered_motors(); ++i) {
+            // current actuator position
+            n = snprintf(buf, sizeof(buf), ",%1.4f", robot->from_millimeters(robot->actuators[i]->get_current_position()));
             if(n > sizeof(buf)) n= sizeof(buf);
             str.append(buf, n);
         }
@@ -292,14 +348,6 @@ std::string Kernel::get_query_string()
         n = snprintf(buf, sizeof(buf), "|F:%1.1f,%1.1f", fr, fro);
         if(n > sizeof(buf)) n= sizeof(buf);
         str.append(buf, n);
-
-        if(plaser == nullptr) {
-            // S is spindle RPM
-            float sr= robot->get_s_value();
-            n = snprintf(buf, sizeof(buf), "|S:%1.2f", sr);
-            if(n > sizeof(buf)) n= sizeof(buf);
-            str.append(buf, n);
-        }
     }
 
     // if not grbl mode get temperatures
@@ -318,17 +366,6 @@ std::string Kernel::get_query_string()
         }
     }
 
-    // if printing from SD card add progress
-    void *returned_data;
-    ok = PublicData::get_value(player_checksum, get_progress_checksum, &returned_data);
-    if (ok) {
-        struct pad_progress p =  *static_cast<struct pad_progress *>(returned_data);
-        char buf[32];
-        size_t n = snprintf(buf, sizeof(buf), "|SD:%lu,%u", p.elapsed_secs, p.percent_complete);
-        if(n > sizeof(buf)) n= sizeof(buf);
-        str.append(buf, n);
-    }
-
     str.append(">\n");
     return str;
 }
@@ -343,16 +380,6 @@ void Kernel::add_module(Module* module)
 void Kernel::register_for_event(_EVENT_ENUM id_event, Module *mod)
 {
     this->hooks[id_event].push_back(mod);
-}
-
-// This will stop the que and stop further commands, and stop motors
-// Optionally used before on_halt() is sent to do a quick stop
-// May be called from an ISR
-void Kernel::immediate_halt()
-{
-    this->halted = true;
-    conveyor->flush_queue(); // make sure no queued up codes get through
-    for(auto &a : robot->actuators) a->stop_moving();
 }
 
 // Call a specific event with an argument

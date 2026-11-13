@@ -58,6 +58,16 @@ class StepTicker{
         Block *current_block;
         uint32_t current_tick{0};
 
+        /*
+        * COLD START OPTIMIZATION PARAMETERS
+        * start_delay_ticks: Runtime countdown register to defer the first STEP pulse.
+        * ticks_for_20us: Pre-calculated step-timer tick threshold required to sustain
+        *                 a hardware-safe ~20 microsecond Direction-to-Step setup time.
+        */
+
+        uint8_t start_delay_ticks{0};
+        uint8_t ticks_for_20us{2};
+
         struct {
             volatile bool running:1;
             uint8_t num_motors:4;

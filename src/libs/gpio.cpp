@@ -1,12 +1,14 @@
 #include "gpio.h"
 
-#include "LPC17xx.h"
-#include "lpc17xx_pinsel.h"
-#include "lpc17xx_gpio.h"
+#include "stm32f4xx.h"
+
+extern "C" uint32_t Set_GPIO_Clock(uint32_t);
+
+static GPIO_TypeDef* const gpios[] = {GPIOA, GPIOB, GPIOC, GPIOD, GPIOE, GPIOF, GPIOG, GPIOH, GPIOI};
 
 GPIO::GPIO(PinName pin) {
-    this->port = (pin >> 5) & 7;
-    this->pin = pin & 0x1F;
+    this->port = STM_PORT(pin);
+    this->pin = STM_PIN(pin);
 
     setup();
 }
@@ -29,25 +31,25 @@ GPIO::GPIO(uint8_t port, uint8_t pin, uint8_t direction) {
 // GPIO::~GPIO() {}
 
 void GPIO::setup() {
-	PINSEL_CFG_Type PinCfg;
-	PinCfg.Funcnum = 0;
-	PinCfg.OpenDrain = PINSEL_PINMODE_NORMAL;
-	PinCfg.Pinmode = PINSEL_PINMODE_TRISTATE;
-	PinCfg.Portnum = GPIO::port;
-	PinCfg.Pinnum = GPIO::pin;
-	PINSEL_ConfigPin(&PinCfg);
+    Set_GPIO_Clock(port);
+
+    gpios[port]->OTYPER &= ~(1 << pin);
+    gpios[port]->PUPDR &= ~(0x3 << (2*pin));
 }
 
 void GPIO::set_direction(uint8_t direction) {
-	FIO_SetDir(port, 1UL << pin, direction);
+    if (direction)
+        output();
+    else
+        input();
 }
 
 void GPIO::output() {
-	set_direction(1);
+    gpios[port]->MODER = (gpios[port]->MODER & ~(0x3<<(2*pin))) | (0x1<<(2*pin));
 }
 
 void GPIO::input() {
-	set_direction(0);
+    gpios[port]->MODER &= ~(0x3<<(2*pin));
 }
 
 void GPIO::write(uint8_t value) {
@@ -59,15 +61,15 @@ void GPIO::write(uint8_t value) {
 }
 
 void GPIO::set() {
-	FIO_SetValue(port, 1UL << pin);
+    gpios[port]->BSRR = (0x1 << pin);
 }
 
 void GPIO::clear() {
-	FIO_ClearValue(port, 1UL << pin);
+    gpios[port]->BSRR = ((0x1 << 16) << pin);
 }
 
 uint8_t GPIO::get() {
-	return (FIO_ReadValue(port) & (1UL << pin))?255:0;
+	return (gpios[port]->IDR & (1UL << pin)) ? 0xFF : 0;
 }
 
 int GPIO::operator=(int value) {

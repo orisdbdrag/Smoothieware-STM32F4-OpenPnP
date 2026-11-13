@@ -9,37 +9,42 @@
 #define SERIALCONSOLE_H
 
 #include "libs/Module.h"
+#include "Serial.h" // mbed.h lib
 #include "libs/Kernel.h"
 #include <vector>
 #include <string>
-
-#include "libs/TSRingBuffer.h"
+using std::string;
+#include "libs/RingBuffer.h"
 #include "libs/StreamOutput.h"
+#include "libs/gpio.h"
+
+
+#define baud_rate_setting_checksum CHECKSUM("baud_rate")
+
+#define RX_BUFF_SIZE 512
 
 class SerialConsole : public Module, public StreamOutput {
     public:
-        SerialConsole(int ch);
-        virtual ~SerialConsole();
+        SerialConsole( PinName rx_pin, PinName tx_pin, PinName rts_pin, PinName cts_pin, int baud_rate );
 
         void on_module_loaded();
-        void on_serial_char_received(char c);
         void on_main_loop(void * argument);
-        void on_idle(void * argument);
-        void init_uart(int baud_rate);
-        int _putc(int c);
-        int _getc(void);
-        bool ready();
+
+        void on_line_idle( void ) { manage_buffer(); }
+        void on_buffer_half_full(void) { manage_buffer(); }
+        void on_buffer_full(void) { manage_buffer(); }
+
         int puts(const char*);
+        mbed::Serial* serial;
+        GPIO *rts_signal;
 
-        TSRingBuffer<char, 256> buffer;   // Receive buffer
-
-        struct {
-          bool query_flag:1;
-          bool halt_flag:1;
-          bool last_char_was_cr:1;
-          uint8_t uartn:2;
-          uint8_t lf_count:8;
-        };
+        unsigned char rx_buff[RX_BUFF_SIZE];
+        unsigned char *tail = rx_buff;
+        
+    private:
+        void manage_buffer(void);
+        bool rts_signal_is_set;
+        bool flow_control;
 };
 
 #endif

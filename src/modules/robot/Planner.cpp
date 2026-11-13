@@ -56,34 +56,30 @@ bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors,
 
     // Direction bits
     bool has_steps = false;
-#ifdef BACKLASH
-    float sos = 0.0F;
-#endif
+    bool z_only = true;
+    block->primary_axis = false;
     for (size_t i = 0; i < n_motors; i++) {
         int32_t steps = THEROBOT->actuators[i]->steps_to_target(actuator_pos[i]);
-#ifdef BACKLASH
-        int32_t bl_steps = 0; // backlash compensation steps
-#endif
-
         // Update current position
         if(steps != 0) {
             THEROBOT->actuators[i]->update_last_milestones(actuator_pos[i], steps);
             has_steps = true;
-#ifdef BACKLASH
-            bl_steps = THEROBOT->actuators[i]->get_backlash_steps(steps);
-            if(bl_steps > 0) sos += powf(THEROBOT->actuators[i]->get_backlash_mm(), 2);
-#endif
+            if (i < N_PRIMARY_AXIS) {
+                block->primary_axis = true;
+            }
         }
 
         // find direction
         block->direction_bits[i] = (steps < 0) ? 1 : 0;
         // save actual steps in block
         block->steps[i] = labs(steps);
-#ifdef BACKLASH
-        // add in backlash compensation, and remember how many steps we used
-        block->steps[i] += bl_steps;
-        block->backlash_steps[i] = (bl_steps * ((steps<0)?-1:1));
-#endif
+        // check if Z only
+        if (i != GAMMA_STEPPER && block->steps[i] != 0) {
+            z_only = false;
+        }
+    }
+    if (block->steps[GAMMA_STEPPER] == 0) {
+        z_only = false;
     }
 
     // sometimes even though there is a detectable movement it turns out there are no steps to be had from such a small move
@@ -93,13 +89,6 @@ bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors,
         return true;
     }
 
-#ifdef BACKLASH
-    // we need to also increase distance so speed is correct
-    if(sos > 0.0F) {
-        distance += sqrtf(sos);
-    }
-#endif
-
     // info needed by laser
     block->s_value = roundf(s_value*(1<<11)); // 1.11 fixed point
     block->is_g123 = g123;
@@ -107,26 +96,9 @@ bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors,
     // use default JD
     float junction_deviation = this->junction_deviation;
 
-    // use either regular junction deviation or z specific and see if a primary axis move
-    block->primary_axis = true;
-    if(block->steps[ALPHA_STEPPER] == 0 && block->steps[BETA_STEPPER] == 0) {
-        if(block->steps[GAMMA_STEPPER] != 0) {
-            // z only move
-            if(!isnan(this->z_junction_deviation)) junction_deviation = this->z_junction_deviation;
-
-        } else {
-            // is not a primary axis move
-            block->primary_axis= false;
-            #if N_PRIMARY_AXIS > 3
-                for (int i = 3; i < N_PRIMARY_AXIS; ++i) {
-                    if(block->steps[i] != 0){
-                        block->primary_axis= true;
-                        break;
-                    }
-                }
-            #endif
-
-        }
+    // use either regular junction deviation or z specific
+    if(z_only && !isnan(this->z_junction_deviation)) {
+        junction_deviation = this->z_junction_deviation;
     }
 
     block->acceleration = acceleration; // save in block
@@ -168,28 +140,35 @@ bool Planner::append_block( ActuatorCoordinates &actuator_pos, uint8_t n_motors,
     // if unit_vec was null then it was not a primary axis move so we skip the junction deviation stuff
     if (unit_vec != nullptr && !THECONVEYOR->is_queue_empty()) {
         Block *prev_block = THECONVEYOR->queue.item_ref(THECONVEYOR->queue.prev(THECONVEYOR->queue.head_i));
-        float previous_nominal_speed = prev_block->primary_axis ? prev_block->nominal_speed : 0;
-
-        if (junction_deviation > 0.0F && previous_nominal_speed > 0.0F) {
+        if (junction_deviation > 0.0F
+            && prev_block->primary_axis == block->primary_axis // distance calculation (primary/auxiliary) must match
+            && prev_block->nominal_speed > 0.0F) {
             // Compute cosine of angle between previous and current path. (prev_unit_vec is negative)
             // NOTE: Max junction velocity is computed without sin() or acos() by trig half angle identity.
             float cos_theta = - this->previous_unit_vec[X_AXIS] * unit_vec[X_AXIS]
                               - this->previous_unit_vec[Y_AXIS] * unit_vec[Y_AXIS]
                               - this->previous_unit_vec[Z_AXIS] * unit_vec[Z_AXIS];
-            #if N_PRIMARY_AXIS > 3
-                for (int i = 3; i < N_PRIMARY_AXIS; ++i) {
-                    cos_theta -= this->previous_unit_vec[i] * unit_vec[i];
-                }
-            #endif
+            for (int i = 3; i < n_motors; ++i) {
+                cos_theta -= this->previous_unit_vec[i] * unit_vec[i];
+            }
 
             // Skip and use default max junction speed for 0 degree acute junction.
             if (cos_theta <= 0.9999F) {
-                vmax_junction = std::min(previous_nominal_speed, block->nominal_speed);
+                vmax_junction = std::min(prev_block->nominal_speed, block->nominal_speed);
                 // Skip and avoid divide by zero for straight junctions at 180 degrees. Limit to min() of nominal speeds.
                 if (cos_theta >= -0.9999F) {
                     // Compute maximum junction velocity based on maximum acceleration and junction deviation
                     float sin_theta_d2 = sqrtf(0.5F * (1.0F - cos_theta)); // Trig half angle identity. Always positive.
-                    vmax_junction = std::min(vmax_junction, sqrtf(acceleration * junction_deviation * sin_theta_d2 / (1.0F - sin_theta_d2)));
+
+                    // Take the minimal acceleration of both blocks symmetrically, so if some of the axes come to a stop in the junction
+                    // and are not involved in the new block their respective acceleration limit as applied in the previous block is still
+                    // respected and properly multiplied with the junction deviation value here. This matters, if the axes involved before
+                    // the junction have much lower accelerator limits than the axes involved after the junction. Example: 90� corner in Y 
+                    // then X on a portal CNC mill where the heavy portal can decelerate much slower than the light tool head on the X
+                    // axis can accelerate.
+                    // Note that by properly respecting acceleration limits across all the axes, even auxilliary axes can be mixed in.
+                    float max_acceleration = std::min(prev_block->acceleration, block->acceleration);
+                    vmax_junction = std::min(vmax_junction, sqrtf(max_acceleration * junction_deviation * sin_theta_d2 / (1.0F - sin_theta_d2)));
                 }
             }
         }
@@ -278,7 +257,7 @@ void Planner::recalculate()
     current     = queue.item_ref(block_index);
 
     if (!queue.is_empty()) {
-        while ((block_index != queue.tail_i) && current->recalculate_flag && !current->is_ticking) {
+        while ((block_index != queue.tail_i) && current->recalculate_flag) {
             entry_speed = current->reverse_pass(entry_speed);
 
             block_index = queue.prev(block_index);

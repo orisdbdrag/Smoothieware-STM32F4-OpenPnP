@@ -1,3 +1,6 @@
+
+
+
 /* Copyright (c) 2010-2011 mbed.org, MIT License
 *
 * Permission is hereby granted, free of charge, to any person obtaining a copy of this software
@@ -19,8 +22,6 @@
 #ifndef USBENDPOINTS_H
 #define USBENDPOINTS_H
 
-#include "USBDevice_Types.h"
-
 /* SETUP packet size */
 #define SETUP_PACKET_SIZE (8)
 
@@ -38,37 +39,47 @@ typedef enum {
     EP_STALLED,     /* Endpoint stalled */
 } EP_STATUS;
 
-class USB_State_Receiver {
-public:
-    virtual bool USBEvent_busReset(void) = 0;
-    virtual bool USBEvent_connectStateChanged(bool connected) = 0;
-    virtual bool USBEvent_suspendStateChanged(bool suspended) = 0;
-};
-
-class USB_Frame_Receiver {
-public:
-    virtual bool USBEvent_Frame(uint16_t) = 0;
-};
-
-class USB_Class_Receiver {
-public:
-    virtual bool USBEvent_Request(CONTROL_TRANSFER&) = 0;
-    virtual bool USBEvent_RequestComplete(CONTROL_TRANSFER&, uint8_t *buf, uint32_t length) = 0;
-};
-
-class USB_Endpoint_Receiver : public USB_Class_Receiver {
-public:
-    virtual bool USBEvent_EPIn(uint8_t, uint8_t) = 0;
-    virtual bool USBEvent_EPOut(uint8_t, uint8_t) = 0;
-};
 
 /* Include configuration for specific target */
-#if defined(TARGET_LPC1768) || defined(TARGET_LPC2368) || defined(__LPC17XX__)
-    #include "USBEndpoints_LPC17_LPC23.h"
-#elif defined(TARGET_LPC11U24)
-    #include "USBEndpoints_LPC11U.h"
+/* Жестко и принудительно подключаем файлы конфигурации конечных точек под STM32 для Monster8 V2 */
+#if !defined(USB_STM_HAL)
+#include "USBEndpoints_STM32F4.h"
 #else
-    #error "Unknown target type"
+#include "USBEndpoints_STM32.h"
 #endif
 
+
+
+
+
+
+/* Include configuration for specific target */
+//#if defined(TARGET_LPC1768) || defined(TARGET_LPC2368) || defined(TARGET_LPC4088) || defined(TARGET_LPC2460) || defined(TARGET_LPC4088_DM)
+//#include "USBEndpoints_LPC17_LPC23.h"
+//#elif defined(TARGET_LPC11UXX) || defined(TARGET_LPC1347) || defined (TARGET_LPC11U6X) || defined (TARGET_LPC1549)
+//#include "USBEndpoints_LPC11U.h"
+//#elif defined(TARGET_KL25Z) | defined(TARGET_KL26Z) | defined(TARGET_KL27Z) | defined(TARGET_KL43Z) | defined(TARGET_KL46Z) | defined(TARGET_K20D50M) | defined(TARGET_K64F) | defined(TARGET_K22F) | defined(TARGET_TEENSY3_1)
+//#include "USBEndpoints_KL25Z.h"
+//#elif !defined(USB_STM_HAL) && defined(TARGET_STM32F4)
+//#include "USBEndpoints_STM32F4.h"
+//#elif defined (TARGET_STM32F4) || defined (TARGET_STM32F2) || defined (TARGET_STM32F7) || defined (TARGET_STM32F3) || defined(TARGET_STM32L0) || defined(TARGET_STM32L4) || defined(TARGET_STM32F1)
+//#include "USBEndpoints_STM32.h"
+//#elif defined (TARGET_RZ_A1H) || defined (TARGET_VK_RZ_A1H)
+//#include "USBEndpoints_RZ_A1H.h"
+//#elif defined(TARGET_Maxim)
+//#include "USBEndpoints_Maxim.h"
+//#elif defined(TARGET_EFM32GG_STK3700) || defined(TARGET_EFM32LG_STK3600) || defined(TARGET_EFM32WG_STK3800) || defined(TARGET_EFM32HG_STK3400)
+//#include "USBEndpoints_EFM32.h"
+//#elif defined(TARGET_NUC472)
+//#include "USBEndpoints_NUC472.h"
+//#elif defined(TARGET_M451)
+//#include "USBEndpoints_M453.h"
+//#elif defined(TARGET_M480)
+//#include "USBEndpoints_M480.h"
+//#else
+//#error "Unknown target type"
+//#endif
+
 #endif
+
+

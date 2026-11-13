@@ -12,7 +12,6 @@
 #include "libs/utils.h"
 #include "libs/SerialMessage.h"
 #include "libs/StreamOutput.h"
-#include "libs/StreamOutputPool.h"
 #include "Conveyor.h"
 #include "DirHandle.h"
 #include "mri.h"
@@ -42,8 +41,9 @@
 #include "utils.h"
 #include "AutoPushPop.h"
 
-#include "system_LPC17xx.h"
-#include "LPC17xx.h"
+//#include "system_LPC17xx.h"
+//#include "LPC17xx.h"
+#include "stm32f407xx.h"
 
 #include "mbed.h" // for wait_ms()
 
@@ -66,7 +66,6 @@ const SimpleShell::ptentry_t SimpleShell::commands_table[] = {
     {"cd",       SimpleShell::cd_command},
     {"pwd",      SimpleShell::pwd_command},
     {"cat",      SimpleShell::cat_command},
-    {"echo",     SimpleShell::echo_command},
     {"rm",       SimpleShell::rm_command},
     {"mv",       SimpleShell::mv_command},
     {"mkdir",    SimpleShell::mkdir_command},
@@ -254,7 +253,6 @@ void SimpleShell::on_console_line_received( void *argument )
             case 'S':
                 switch_command(possible_command, new_message.stream);
                 break;
-
             case 'J':
                 // instant jog command
                 jog(possible_command, new_message.stream);
@@ -271,22 +269,25 @@ void SimpleShell::on_console_line_received( void *argument )
         string cmd = shift_parameter(possible_command);
 
         // Configurator commands
-        if (cmd == "config-get"){
-            THEKERNEL->configurator->config_get_command(  possible_command, new_message.stream );
+     //   if (cmd == "config-get"){
+      //      THEKERNEL->configurator->config_get_command(  possible_command, new_message.stream );
 
-        } else if (cmd == "config-set"){
-            THEKERNEL->configurator->config_set_command(  possible_command, new_message.stream );
+     //   } else if (cmd == "config-set"){
+      //      THEKERNEL->configurator->config_set_command(  possible_command, new_message.stream );
 
-        } else if (cmd == "config-load"){
-            THEKERNEL->configurator->config_load_command(  possible_command, new_message.stream );
+     //   } else if (cmd == "config-load"){
+     //       THEKERNEL->configurator->config_load_command(  possible_command, new_message.stream );
 
-        } else if (cmd == "play" || cmd == "progress" || cmd == "abort" || cmd == "suspend" || cmd == "resume") {
+     //   } else if (cmd == "play" || cmd == "progress" || cmd == "abort" || cmd == "suspend" || cmd == "resume") {
             // these are handled by Player module
 
-        } else if (cmd == "fire") {
+      //  } else if (cmd == "fire") {
             // these are handled by Laser module
 
-        } else if (cmd.substr(0, 2) == "ok") {
+     //   } else
+
+
+        	if (cmd.substr(0, 2) == "ok") {
             // probably an echo so ignore the whole line
             //new_message.stream->printf("ok\n");
 
@@ -336,12 +337,12 @@ void SimpleShell::ls_command( string parameters, StreamOutput *stream )
     }
 }
 
-extern SDFAT mounter;
+//extern SDFAT mounter; // no SD on chmt
 
 void SimpleShell::remount_command( string parameters, StreamOutput *stream )
 {
-    mounter.remount();
-    stream->printf("remounted\r\n");
+    //mounter.remount();
+    stream->printf("no SD device\r\n");
 }
 
 // Delete a file
@@ -456,13 +457,6 @@ void SimpleShell::cat_command( string parameters, StreamOutput *stream )
     }
 }
 
-// echo commands
-void SimpleShell::echo_command( string parameters, StreamOutput *stream )
-{
-    //send to all streams
-    THEKERNEL->streams->printf("echo: %s\r\n", parameters.c_str());
-}
-
 void SimpleShell::upload_command( string parameters, StreamOutput *stream )
 {
     // this needs to be a hack. it needs to read direct from serial and not allow on_main_loop run until done
@@ -491,11 +485,7 @@ void SimpleShell::upload_command( string parameters, StreamOutput *stream )
             continue;
         }
 
-        int c = stream->_getc();
-        if(c == -1) {
-            stream->printf("error reading input, aborting\n");
-            return;
-        }
+        char c = stream->_getc();
         if( c == 4 || c == 26) { // ctrl-D or ctrl-Z
             uploading = false;
             // close file
@@ -522,15 +512,10 @@ void SimpleShell::upload_command( string parameters, StreamOutput *stream )
         }
     }
     // we got an error so ignore everything until EOF
-    int c;
+    char c;
     do {
         if(stream->ready()) {
             c= stream->_getc();
-            if(c == -1) {
-                stream->printf("error reading input, aborting\n");
-                return;
-            }
-
         }else{
             THEKERNEL->call_event(ON_IDLE);
             c= 0;
@@ -624,24 +609,6 @@ void SimpleShell::mem_command( string parameters, StreamOutput *stream)
     stream->printf("Block size: %u bytes, Tickinfo size: %u bytes\n", sizeof(Block), sizeof(Block::tickinfo_t) * Block::n_actuators);
 }
 
-static uint32_t getDeviceType()
-{
-#define IAP_LOCATION 0x1FFF1FF1
-    uint32_t command[1];
-    uint32_t result[5];
-    typedef void (*IAP)(uint32_t *, uint32_t *);
-    IAP iap = (IAP) IAP_LOCATION;
-
-    __disable_irq();
-
-    command[0] = 54;
-    iap(command, result);
-
-    __enable_irq();
-
-    return result[1];
-}
-
 // get network config
 void SimpleShell::net_command( string parameters, StreamOutput *stream)
 {
@@ -661,22 +628,18 @@ void SimpleShell::net_command( string parameters, StreamOutput *stream)
 void SimpleShell::version_command( string parameters, StreamOutput *stream)
 {
     Version vers;
-    uint32_t dev = getDeviceType();
-    const char *mcu = (dev & 0x00100000) ? "LPC1769" : "LPC1768";
+
+    const uint32_t *mcu_idcode = (const uint32_t *)DBGMCU_BASE;
+    const char *mcu = ((*mcu_idcode & 0x0FFF) == 0x413) ? "STM32F4" : "Unknown";
+
     stream->printf("Build version: %s, Build date: %s, MCU: %s, System Clock: %ldMHz\r\n", vers.get_build(), vers.get_build_date(), mcu, SystemCoreClock / 1000000);
     #ifdef CNC
-    stream->printf("  CNC Build ");
+    stream->printf("CNC Build ");
     #endif
     #ifdef DISABLEMSD
     stream->printf("  NOMSD Build\r\n");
     #endif
-    stream->printf("%d axis\n", MAX_ROBOT_ACTUATORS);
-    if(!(dev & 0x00100000)) {
-        stream->printf("NOTICE: This MCU is deprecated, and cannot guarantee proper function\n");
-        THEKERNEL->set_bad_mcu(true);
-    }else{
-        THEKERNEL->set_bad_mcu(false);
-    }
+    stream->printf("%d axis\r\n", MAX_ROBOT_ACTUATORS);
 }
 
 // Reset the system
@@ -710,17 +673,6 @@ static int get_active_tool()
     } else {
         return 0;
     }
-}
-
-static bool get_switch_state(const char *sw)
-{
-    // get sw switch state
-    struct pad_switch pad;
-    bool ok = PublicData::get_value(switch_checksum, get_checksum(sw), 0, &pad);
-    if (!ok) {
-        return false;
-    }
-    return pad.state;
 }
 
 void SimpleShell::grblDP_command( string parameters, StreamOutput *stream)
@@ -770,12 +722,12 @@ void SimpleShell::grblDP_command( string parameters, StreamOutput *stream)
         THEROBOT->from_millimeters(std::get<2>(v[n+1])));
 
     if(verbose) {
-        stream->printf("[TLO:%1.4f,%1.4f,%1.4f]\n",
+        stream->printf("[Tool Offset:%1.4f,%1.4f,%1.4f]\n",
             THEROBOT->from_millimeters(std::get<0>(v[n+2])),
             THEROBOT->from_millimeters(std::get<1>(v[n+2])),
             THEROBOT->from_millimeters(std::get<2>(v[n+2])));
     }else{
-        stream->printf("[TLO:%1.4f]\n", THEROBOT->from_millimeters(std::get<2>(v[n+2])));
+        stream->printf("[TL0:%1.4f]\n", THEROBOT->from_millimeters(std::get<2>(v[n+2])));
     }
 
     // this is the last probe position, updated when a probe completes, also stores the number of steps moved after a homing cycle
@@ -877,9 +829,9 @@ void SimpleShell::get_command( string parameters, StreamOutput *stream)
         grblDP_command("-v", stream);
 
     } else if (what == "state") {
-        // also $G and $I
-        // [GC:G0 G55 G17 G21 G90 G94 M0 M5 M9 T1 F4000.0000 S0.8000]
-        stream->printf("[GC:G%d %s G%d G%d G%d G94 M0 M%c M%c T%d F%1.1f S%1.4f]\n",
+        // also $G
+        // [G0 G54 G17 G21 G90 G94 M0 M5 M9 T0 F0.]
+        stream->printf("[G%d %s G%d G%d G%d G94 M0 M5 M9 T%d F%1.4f S%1.4f]\n",
             THEKERNEL->gcode_dispatch->get_modal_command(),
             wcs2gcode(THEROBOT->get_current_wcs()).c_str(),
             THEROBOT->plane_axis_0 == X_AXIS && THEROBOT->plane_axis_1 == Y_AXIS && THEROBOT->plane_axis_2 == Z_AXIS ? 17 :
@@ -887,8 +839,6 @@ void SimpleShell::get_command( string parameters, StreamOutput *stream)
               THEROBOT->plane_axis_0 == Y_AXIS && THEROBOT->plane_axis_1 == Z_AXIS && THEROBOT->plane_axis_2 == X_AXIS ? 19 : 17,
             THEROBOT->inch_mode ? 20 : 21,
             THEROBOT->absolute_mode ? 90 : 91,
-            get_switch_state("spindle") ? '3' : '5',
-            get_switch_state("mist") ? '7' : get_switch_state("flood") ? '8' : '9',
             get_active_tool(),
             THEROBOT->from_millimeters(THEROBOT->get_feed_rate()),
             THEROBOT->get_s_value());
@@ -965,28 +915,8 @@ void SimpleShell::calc_thermistor_command( string parameters, StreamOutput *stre
 // set or get switch state for a named switch
 void SimpleShell::switch_command( string parameters, StreamOutput *stream)
 {
-    string type;
-    string value;
-
-    if(parameters[0] == '$') {
-        // $S command
-        type = shift_parameter( parameters );
-        while(!type.empty()) {
-            struct pad_switch pad;
-            bool ok = PublicData::get_value(switch_checksum, get_checksum(type), 0, &pad);
-            if(ok) {
-                stream->printf("switch %s is %d\n", type.c_str(), pad.state);
-            }
-
-            type = shift_parameter( parameters );
-        }
-        return;
-
-    }else{
-        type = shift_parameter( parameters );
-        value = shift_parameter( parameters );
-    }
-
+    string type = shift_parameter( parameters );
+    string value = shift_parameter( parameters );
     bool ok = false;
     if(value.empty()) {
         // get switch state
@@ -1004,8 +934,8 @@ void SimpleShell::switch_command( string parameters, StreamOutput *stream)
             bool b = value == "on";
             ok = PublicData::set_value( switch_checksum, get_checksum(type), state_checksum, &b );
         } else {
-            stream->printf("must be either on or off\n");
-            return;
+            float v = strtof(value.c_str(), NULL);
+            ok = PublicData::set_value( switch_checksum, get_checksum(type), value_checksum, &v );
         }
         if (ok) {
             stream->printf("switch %s set to: %s\n", type.c_str(), value.c_str());
@@ -1040,11 +970,6 @@ void SimpleShell::md5sum_command( string parameters, StreamOutput *stream )
 // runs several types of test on the mechanisms
 void SimpleShell::test_command( string parameters, StreamOutput *stream)
 {
-    if(!THECONVEYOR->is_idle()) {
-        stream->printf("error: tests are not allowed while printing or busy\n");
-        return;
-    }
-
     AutoPushPop app; // this will save the state and restore it on exit
     string what = shift_parameter( parameters );
 
@@ -1157,8 +1082,8 @@ void SimpleShell::test_command( string parameters, StreamOutput *stream)
          }
         stream->printf("done\n");
 
-    }else if (what == "raw" || what == "acc") {
-        // issues raw steps (or actuator units) to the specified axis usage: axis steps steps/sec
+    }else if (what == "raw") {
+        // issues raw steps to the specified axis usage: axis steps steps/sec
         string axis = shift_parameter( parameters );
         string stepstr = shift_parameter( parameters );
         string stepspersec = shift_parameter( parameters );
@@ -1170,7 +1095,7 @@ void SimpleShell::test_command( string parameters, StreamOutput *stream)
         char ax= toupper(axis[0]);
         uint8_t a= ax >= 'X' ? ax - 'X' : ax - 'A' + 3;
         int steps= strtol(stepstr.c_str(), NULL, 10);
-        bool dir= steps <= 0;
+        bool dir= steps >= 0;
         steps= std::abs(steps);
 
         if(a > C_AXIS) {
@@ -1184,13 +1109,6 @@ void SimpleShell::test_command( string parameters, StreamOutput *stream)
         }
 
         uint32_t sps= strtol(stepspersec.c_str(), NULL, 10);
-
-        if(what == "acc") {
-            // convert actuator units to steps
-            steps= lroundf(THEROBOT->actuators[a]->get_steps_per_mm() * steps);
-            // convert steps per unit to steps/sec
-            sps= lroundf(THEROBOT->actuators[a]->get_steps_per_mm() * sps);
-        }
         sps= std::max(sps, 1UL);
 
         uint32_t delayus= 1000000.0F / sps;
@@ -1206,245 +1124,62 @@ void SimpleShell::test_command( string parameters, StreamOutput *stream)
 
         //stream->printf("done\n");
 
-    }else if (what == "pulse") {
-        // issues a step pulse then waits then unsteps, for testing when stepper moves
-        string axis = shift_parameter( parameters );
-        string reps = shift_parameter( parameters );
-        if(axis.empty()) {
-            stream->printf("error: Need axis [iterations]\n");
-            return;
-        }
-
-        char ax= toupper(axis[0]);
-        uint8_t a= ax >= 'X' ? ax - 'X' : ax - 'A' + 3;
-
-        if(a > C_AXIS) {
-            stream->printf("error: axis must be x, y, z, a, b, c\n");
-            return;
-        }
-
-        if(a >= THEROBOT->get_number_registered_motors()) {
-            stream->printf("error: axis is out of range\n");
-            return;
-        }
-
-        int nreps= 1;
-        if(!reps.empty()) {
-            nreps= strtol(reps.c_str(), NULL, 10);
-        }
-
-        uint32_t delayms= 5000.0F; // step every five seconds
-        for(int s= 0;s<nreps;s++) {
-            if(THEKERNEL->is_halted()) break;
-            stream->printf("// leading edge\n");
-            THEROBOT->actuators[a]->step();
-            safe_delay_ms(delayms);
-            stream->printf("// trailing edge\n");
-            THEROBOT->actuators[a]->unstep();
-            if(THEKERNEL->is_halted()) break;
-            safe_delay_ms(delayms);
-        }
-
-        // reset the position based on current actuator position
-        THEROBOT->reset_position_from_current_actuator_position();
-
-        stream->printf("done\n");
-
     }else {
         stream->printf("usage:\n test jog axis distance iterations [feedrate]\n");
         stream->printf(" test square size iterations [feedrate]\n");
         stream->printf(" test circle radius iterations [feedrate]\n");
         stream->printf(" test raw axis steps steps/sec\n");
-        stream->printf(" test acc axis units units/sec\n");
-        stream->printf(" test pulse axis iterations\n");
     }
 }
 
 void SimpleShell::jog(string parameters, StreamOutput *stream)
 {
-    // $J X0.1 [Y0.2] [S0.5]
+    // $J X0.1 F0.5
     int n_motors= THEROBOT->get_number_registered_motors();
 
     // get axis to move and amount (X0.1)
-    // may specify multiple axis
+    // for now always 1 axis
+    size_t npos= parameters.find_first_of("XYZABC");
+    if(npos == string::npos) {
+        stream->printf("usage: $J X|Y|Z|A|B|C 0.01 [F0.5]\n");
+        return;
+    }
 
-    float rate_mm_s= NAN;
-    float scale= 1.0F;
-    float fr= NAN;
+    string s = parameters.substr(npos);
+    if(s.empty() || s.size() < 2) {
+        stream->printf("usage: $J X0.01 [F0.5]\n");
+        return;
+    }
+    char ax= toupper(s[0]);
+    uint8_t a= ax >= 'X' ? ax - 'X' : ax - 'A' + 3;
+    if(a >= n_motors) {
+        stream->printf("error:bad axis\n");
+        return;
+    }
+
+    float d= strtof(s.substr(1).c_str(), NULL);
+
     float delta[n_motors];
     for (int i = 0; i < n_motors; ++i) {
         delta[i]= 0;
     }
+    delta[a]= d;
 
-    // $J is first parameter
-    shift_parameter(parameters);
-    if(parameters.empty()) {
-        stream->printf("usage: $J [-c] X0.01 [S0.5|Fnnn] - axis can be XYZABC, optional speed is scale of max_rate or feedrate. -c turns on continuous jog mode\n");
-        return;
+    // get speed scale
+    float scale= 1.0F;
+    npos= parameters.find_first_of("F");
+    if(npos != string::npos && npos+1 < parameters.size()) {
+        scale= strtof(parameters.substr(npos+1).c_str(), NULL);
     }
 
-    bool cont_mode= false;
-    bool send_ok= false;
-    while(!parameters.empty()) {
-        string p= shift_parameter(parameters);
+    THEROBOT->push_state();
+    float rate_mm_s= THEROBOT->actuators[a]->get_max_rate() * scale;
+    THEROBOT->delta_move(delta, rate_mm_s, n_motors);
 
-        if(p.size() == 2 && p[0] == '-') {
-            // process option
-            switch(toupper(p[1])) {
-                case 'C':
-                    cont_mode= true;
-                    break;
-                case 'R': // send ok when done use this when sending $J in a gcode file
-                    send_ok= true;
-                    break;
-                default:
-                    stream->printf("error:illegal option %c\n", p[1]);
-                    return;
-            }
-            continue;
-        }
-
-
-        char ax= toupper(p[0]);
-        if(ax == 'S') {
-            // get speed scale
-            scale= strtof(p.substr(1).c_str(), NULL);
-            fr= NAN;
-            continue;
-        }else if(ax == 'F') {
-            // OR specify feedrate (last one wins)
-            scale= 1.0F;
-            fr= strtof(p.substr(1).c_str(), NULL) / 60.0F; // we want mm/sec but F is specified in mm/min
-            continue;
-        }
-
-        if(!((ax >= 'X' && ax <= 'Z') || (ax >= 'A' && ax <= 'C'))) {
-            stream->printf("error:bad axis %c\n", ax);
-            return;
-        }
-
-        uint8_t a= ax >= 'X' ? ax - 'X' : ax - 'A' + 3;
-        if(a >= n_motors) {
-            stream->printf("error:axis out of range %c\n", ax);
-            return;
-        }
-
-        delta[a]= strtof(p.substr(1).c_str(), NULL);
-    }
-
-    // select slowest axis rate to use
-    bool ok= false;
-    for (int i = 0; i < n_motors; ++i) {
-        if(delta[i] != 0) {
-            ok= true;
-            if(isnan(rate_mm_s)) {
-                rate_mm_s= THEROBOT->actuators[i]->get_max_rate();
-            }else{
-                rate_mm_s = std::min(rate_mm_s, THEROBOT->actuators[i]->get_max_rate());
-            }
-        }
-    }
-    if(!ok) {
-        stream->printf("error:no delta jog specified\n");
-        return;
-    }
-
-    if(THEKERNEL->is_halted()) {
-        // if we are in ALARM state and cont mode we send relevant error response
-        if(THEKERNEL->is_grbl_mode()) {
-            stream->printf("error:Alarm lock\n");
-        } else {
-            stream->printf("!!\n");
-        }
-        return;
-    }
-
-
-    // There is a race condition where a quick press/release could send the ^Y before the $J -c is executed
-    // this would result in continuous movement, not a good thing.
-    // so check if stop request is true and abort if it is, this means we must leave stop request false after this
-    if(THEKERNEL->get_stop_request()) {
-        THEKERNEL->set_stop_request(false);
-        stream->printf("ok\n");
-        return;
-    }
-
-    // set feedrate, either scale of max or actual feedrate
-    if(isnan(fr)) {
-        fr = rate_mm_s * scale;
-    }else{
-        // make sure we do not exceed maximum
-        if(fr > rate_mm_s) fr= rate_mm_s;
-    }
-
-    if(cont_mode) {
-        // continuous jog mode
-        // calculate minimum distance to travel to accomodate acceleration and feedrate
-        float acc= THEROBOT->get_default_acceleration();
-        float t= fr/acc; // time to reach feed rate
-        float d= 0.5F * acc * powf(t, 2); // distance required to accelerate (or decelerate)
-        d = std::max(d, 0.3333F); // take minimum being 1mm overall so 0.3333mm
-        // we need to check if the feedrate is too slow, for continuous jog if it takes over 5 seconds it is too slow
-        t= d*3 / fr; // time it will take to do all three blocks
-        if(t > 5) {
-            // increase feedrate so it will not take more than 5 seconds
-            fr= (d*3)/5;
-        }
-
-        // we need to move at least this distance to reach full speed
-        for (int i = 0; i < n_motors; ++i) {
-            if(delta[i] != 0) {
-                delta[i]= d * (delta[i]<0?-1:1);
-            }
-        }
-        // stream->printf("distance: %f, time:%f, X%f Y%f Z%f, speed:%f\n", d, t, delta[0], delta[1], delta[2], fr);
-
-        THECONVEYOR->wait_for_idle();
-
-        // turn off any compensation transform so Z does not move as we jog
-        auto savect= THEROBOT->compensationTransform;
-        THEROBOT->reset_compensated_machine_position();
-
-        // feed three blocks that allow full acceleration, full speed and full deceleration
-        THECONVEYOR->set_hold(true);
-        THEROBOT->delta_move(delta, fr, n_motors); // accelerates upto speed
-        THEROBOT->delta_move(delta, fr, n_motors); // continues at full speed
-        THEROBOT->delta_move(delta, fr, n_motors); // decelerates to zero
-
-        // DEBUG
-        // THECONVEYOR->dump_queue();
-
-        // tell it to run the second block until told to stop
-        if(!THECONVEYOR->set_continuous_mode(true)) {
-            stream->printf("error:Not enough memory to run continuous mode\n");
-            THECONVEYOR->set_hold(false);
-            THECONVEYOR->flush_queue();
-            return;
-        }
-
-        THECONVEYOR->set_hold(false);
-        THECONVEYOR->force_queue();
-
-        while(!THEKERNEL->get_stop_request()) {
-            THEKERNEL->call_event(ON_IDLE);
-            if(THEKERNEL->is_halted()) break;
-        }
-        THECONVEYOR->set_continuous_mode(false);
-        THEKERNEL->set_stop_request(false);
-        THECONVEYOR->wait_for_idle();
-
-        // reset the position based on current actuator position
-        THEROBOT->reset_position_from_current_actuator_position();
-        // restore compensationTransform
-        THEROBOT->compensationTransform= savect;
-        stream->printf("ok\n");
-
-    }else{
-        THEROBOT->delta_move(delta, fr, n_motors);
-        // turn off queue delay and run it now
-        THECONVEYOR->force_queue();
-        if(send_ok) stream->printf("ok\n");
-    }
+    // turn off queue delay and run it now
+    THECONVEYOR->force_queue();
+    THEROBOT->pop_state();
+    //stream->printf("Jog: %c%f F%f\n", ax, d, scale);
 }
 
 void SimpleShell::help_command( string parameters, StreamOutput *stream )
@@ -1465,6 +1200,7 @@ void SimpleShell::help_command( string parameters, StreamOutput *stream )
     stream->printf("reset - reset smoothie\r\n");
     stream->printf("dfu - enter dfu boot loader\r\n");
     stream->printf("break - break into debugger\r\n");
+    stream->printf("config-get [<configuration_source>] <configuration_setting>\r\n");
     stream->printf("config-set [<configuration_source>] <configuration_setting> <value>\r\n");
     stream->printf("get [pos|wcs|state|status|fk|ik]\r\n");
     stream->printf("get temp [bed|hotend]\r\n");

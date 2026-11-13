@@ -19,108 +19,66 @@
 #ifndef CIRCBUFFER_H
 #define CIRCBUFFER_H
 
-#include <stdlib.h>
-#include "sLPC17xx.h"
-#include "platform_memory.h"
-
-template <class T>
+template <class T, int Size>
 class CircBuffer {
 public:
-    CircBuffer(int length) {
-        write = 0;
-        read = 0;
-        size = length;
-        buf = (uint8_t*) AHB0.alloc(size * sizeof(T));
-    };
-
-	bool isFull() {
-		return ((write + 1) % size == read);
+    CircBuffer():write(0), read(0){}
+    bool isFull() {
+        return ((write + 1) % size == read);
     };
 
     bool isEmpty() {
         return (read == write);
     };
 
-    void iqueue(T k) {
-        if (isFull()) {
-            read++;
-            read %= size;
-        }
-        buf[write++] = k;
-        write %= size;
-    }
-
     void queue(T k) {
-        __disable_irq();
         if (isFull()) {
             read++;
             read %= size;
         }
         buf[write++] = k;
         write %= size;
-        __enable_irq();
     }
 
+/* Begin by Yanminge 2019-01-25 */
+#if SMOOTHIEWARE_FEATURE_ENABLE
     // pop last entered character
-    // void pop() {
-    //     __disable_irq();
-    //     if(!isEmpty()) {
-    //         write--;
-    //         write %= size;
-    //     }
-    //     __enable_irq();
-    // }
-
-    // pop last entered character from ISR
-    void ipop() {
+    void pop() {
         if(!isEmpty()) {
             write--;
             write %= size;
         }
     }
 
-    uint16_t iavailable() {
-		return (write >= read) ? write - read : (size - read) + write;
-    };
-    uint16_t available() {
-        __disable_irq();
-        uint16_t i= (write >= read) ? write - read : (size - read) + write;
-        __enable_irq();
-        return i;
-    };
+    void flush() {
+        read = write;
+    }
+
     uint16_t free() {
         return size - available() - 1;
     };
 
-    void dump() {
-        iprintf("[RingBuffer Sz:%2d Rd:%2d Wr:%2d Av:%2d Fr:%2d]\n", size, read, write, available(), free());
-    }
+#endif /* SMOOTHIEWARE_FEATURE_ENABLE */
+/* End by Yanminge 2019-01-25 */
+
+    uint16_t available() {
+        return (write >= read) ? write - read : size - read + write;
+    };
 
     bool dequeue(T * c) {
-        __disable_irq();
         bool empty = isEmpty();
         if (!empty) {
             *c = buf[read++];
             read %= size;
         }
-        __enable_irq();
         return(!empty);
     };
-
-    void peek(T * c, int offset) {
-        int h = (read + offset) % size;
-        *c = buf[h];
-    };
-
-    void flush() {
-        read = write;
-    }
 
 private:
     volatile uint16_t write;
     volatile uint16_t read;
-    uint16_t size;
-    T * buf;
+    static const int size = Size+1;  //a modern optimizer should be able to remove this so it uses no ram.
+    T buf[Size+1];
 };
 
 #endif

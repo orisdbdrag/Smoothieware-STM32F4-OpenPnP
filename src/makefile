@@ -1,12 +1,13 @@
 PROJECT=main
 BUILD_DIR=../build
-DEVICES=lpc1768
-
+DEVICES=stm32f407xg
+CNC?=1
+DISABLEMSD?=1
 # BUILD_TYPE can be set to the following values:
 #  Checked - Optimizations enabled with MRI debug monitor support. (Recommended Type)
 #  Release - Optimizations enabled.
 #  Debug - Optimization disabled with MRI debug monitor support.
-BUILD_TYPE=Checked
+BUILD_TYPE=Release
 
 # Set to 1 to tag each heap allocation with the caller's return address.
 # NOTE: Can't be enabled with latest build as not compatible with newlib nano.
@@ -19,7 +20,7 @@ WRITE_BUFFER_DISABLE=0
 # specific amount of space for the stack.  The heap's growth will be
 # constrained to reserve this much space for the stack and the stack won't be
 # able to grow larger than this amount.
-STACK_SIZE=3584
+STACK_SIZE=3072
 
 # Set to 1 to allow MRI debug monitor to take full control of UART0 and use it
 # as a dedicated debug channel.  If you are using the USB based serial port for
@@ -29,7 +30,7 @@ ENABLE_DEBUG_MONITOR?=0
 
 # this is the default UART baud rate used if it is not set in config
 # it is also the baud rate used to report any errors found while parsing the config file
-DEFAULT_SERIAL_BAUD_RATE?=9600
+DEFAULT_SERIAL_BAUD_RATE?=115200
 
 ifeq "$(ENABLE_DEBUG_MONITOR)" "1"
 # Can add MRI_UART_BAUD=115200 to next line if GDB fails to connect to MRI.
@@ -61,7 +62,7 @@ endif
 # include an optional default set of excludes
 # add any modules that you do not want included in the build
 # e.g for a CNC machine
-#export EXCLUDE_MODULES = tools/laser tools/temperaturecontrol tools/extruder
+export EXCLUDE_MODULES = #tools/laser tools/drillingcycles tools/filamentdetector tools/rotarydeltacalibration tools/scaracal tools/spindle tools/zprobe utils/panel
 -include default_excludes.mk
 
 # override any default excludes by setting NODEFAULTEXCLUDES=1
@@ -72,18 +73,21 @@ ifeq "$(EXCLUDE_MODULES)" ""
 
 ifeq "$(CNC)" "1"
 # CNC build excludes these
-export EXCLUDE_MODULES = tools/filamentdetector tools/scaracal tools/temperaturecontrol tools/temperatureswitch tools/extruder
+# export EXCLUDE_MODULES = tools/filamentdetector tools/scaracal tools/temperaturecontrol tools/temperatureswitch tools/extruder
+export EXCLUDE_MODULES = tools/filamentdetector tools/scaracal tools/temperaturecontrol tools/temperatureswitch tools/extruder \
+							tools/laser tools/spindle tools/drillingcycles tools/rotarydeltacalibration tools/toolmanager \
+							tools/zprobe utils/player utils/panel utils/configurator utils/motordrivercontrol \
+							utils/currentcontrol utils/PlayLed 
+
+
+
+
 else
 # 3D build excludes these
 export EXCLUDE_MODULES = tools/drillingcycles tools/spindle
 endif
-endif
-endif
 
-ifeq "$(BACKLASH)" "1"
-DEFINES += -DBACKLASH
-$(info **NOTE** Including BACKLASH compensation)
-
+endif
 endif
 
 ifneq "$(INCLUDE_MODULE)" ""
@@ -106,7 +110,34 @@ DEFINES += -DN_PRIMARY_AXIS=$(PAXIS)
 endif
 
 # set to not compile in any network support
-#export NONETWORK = 1
+export NONETWORK = 1
+
+# set to not compile in any USB support
+export NOUSB = 1
+
+# set to not compile in any CAN support
+#export NOCAN = 1
+
+
+ifeq "$(NOCAN)" "1"
+DEFINES += -DNO_CAN_BRIDGE
+endif
+
+
+
+
+
+export EXCLUDE_MODULES += libs/LPC17xx libs/LPC17xx/LPC17xxLib
+
+
+
+
+
+
+# --------------------------------------
+
+
+# --------------------------------------
 
 include $(BUILD_DIR)/build.mk
 
@@ -140,3 +171,7 @@ debug: ../LPC1768/$(PROJECT)_lastupload.elf
 console:
 	stty raw ignbrk -echo $(BAUD) < $(CONSOLE)
 	( cat <&3 & cat >&3 ; kill %% ) 3<>$(CONSOLE)
+	
+all:
+	@echo "Copying to firmware.bin..."
+	@copy ..\STM32F407xG\$(PROJECT).bin ..\STM32F407xG\firmware.bin

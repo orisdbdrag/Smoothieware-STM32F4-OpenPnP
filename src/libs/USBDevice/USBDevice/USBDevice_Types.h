@@ -49,7 +49,7 @@
 
 /* Descriptors */
 #define DESCRIPTOR_TYPE(wValue)  (wValue >> 8)
-#define DESCRIPTOR_INDEX(wValue) (wValue & 0xf)
+#define DESCRIPTOR_INDEX(wValue) (wValue & 0xff)
 
 typedef struct {
     struct {
@@ -66,7 +66,7 @@ typedef struct {
 typedef struct {
     SETUP_PACKET setup;
     uint8_t *ptr;
-    int32_t remaining;
+    uint32_t remaining;
     uint8_t direction;
     bool zlp;
     bool notify;

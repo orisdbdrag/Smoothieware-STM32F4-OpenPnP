@@ -17,7 +17,6 @@ class LinearDeltaSolution : public BaseSolution {
     private:
         void init();
 
-        bool halt_on_error;
         float arm_length;
         float arm_radius;
         float arm_length_squared;

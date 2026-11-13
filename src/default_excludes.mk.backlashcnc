@@ -1,3 +1,0 @@
-export CNC=1
-export BACKLASH=1
-export EXCLUDE_MODULES = tools/filamentdetector tools/scaracal tools/temperaturecontrol tools/extruder 

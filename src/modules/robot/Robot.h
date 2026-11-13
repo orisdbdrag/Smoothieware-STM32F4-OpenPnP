@@ -18,6 +18,7 @@ using std::string;
 #include "libs/Module.h"
 #include "ActuatorCoordinates.h"
 #include "nuts_bolts.h"
+#include "Pin.h"
 
 class Gcode;
 class BaseSolution;
@@ -32,17 +33,15 @@ class Robot : public Module {
         Robot();
         void on_module_loaded();
         void on_gcode_received(void* argument);
-        void after_config();
 
         void reset_axis_position(float position, int axis);
         void reset_axis_position(float x, float y, float z);
         void reset_actuator_position(const ActuatorCoordinates &ac);
         void reset_position_from_current_actuator_position();
-        void reset_compensated_machine_position();
         float get_seconds_per_minute() const { return seconds_per_minute; }
         float get_z_maxfeedrate() const { return this->max_speeds[Z_AXIS]; }
         float get_default_acceleration() const { return default_acceleration; }
-        void set_tool_offset(const float offset[N_PRIMARY_AXIS]);
+        void setToolOffset(const float offset[N_PRIMARY_AXIS]);
         float get_feed_rate() const;
         float get_s_value() const { return s_value; }
         void set_s_value(float s) { s_value= s; }
@@ -63,8 +62,6 @@ class Robot : public Module {
         bool delta_move(const float delta[], float rate_mm_s, uint8_t naxis);
         uint8_t register_motor(StepperMotor*);
         uint8_t get_number_registered_motors() const {return n_motors; }
-        void enable_backlash_compensation(bool flg);
-        bool get_backlash_enabled() const;
 
         BaseSolution* arm_solution;                           // Selected Arm solution ( millimeters to step calculation )
 
@@ -98,7 +95,6 @@ class Robot : public Module {
             uint8_t plane_axis_0:2;                           // Current plane ( XY, XZ, YZ )
             uint8_t plane_axis_1:2;
             uint8_t plane_axis_2:2;
-            bool no_laser:1;
         };
 
     private:
@@ -118,13 +114,14 @@ class Robot : public Module {
         void process_move(Gcode *gcode, enum MOTION_MODE_T);
         bool is_homed(uint8_t i) const;
 
+        float theta(float x, float y);
         void select_plane(uint8_t axis_0, uint8_t axis_1, uint8_t axis_2);
-        void clear_tool_offset();
+        void clearToolOffset();
         int get_active_extruder() const;
 
         std::array<wcs_t, MAX_WCS> wcs_offsets; // these are persistent once saved with M500
-        uint8_t current_wcs{0}; // 0 means G54 is enabled this is persistent once saved with M500
-        wcs_t g92_offset;
+        uint8_t current_wcs{0}; // 0 means G54 is enabled this is persistent once saved with M500
+        float g92_offset[k_max_actuators];
         wcs_t tool_offset; // used for multiple extruders, sets the tool offset for the current extruder applied first
         std::tuple<float, float, float, uint8_t> last_probe_position{0,0,0,0};
 
@@ -143,6 +140,7 @@ class Robot : public Module {
         float seconds_per_minute;                            // for realtime speed change
         float default_acceleration;                          // the defualt accleration if not set for each axis
         float s_value;                                       // modal S value
+        float arc_milestone[3];                              // used as start of an arc command
 
         // Number of arc generation iterations by small angle approximation before exact arc trajectory
         // correction. This parameter may be decreased if there are issues with the accuracy of the arc
@@ -159,6 +157,23 @@ class Robot : public Module {
 
         // Used by Planner
         friend class Planner;
+
+        /*
+         * SERVO SYNCHRONIZATION RUNTIME STATES AND PERIPHERAL POINTERS
+         * servosync_enable:     Master toggle read from config to activate physical 'In-Position' feedback logic.
+         * servosync_led_enable: Configuration flag to enable/disable visual LED indication during servo lag.
+         * servosync_inp_pin:    Memory pointer to the input GPIO register monitoring the servo's Position Complete optocoupler.
+         * servosync_led_pin:    Memory pointer to the output GPIO register driving the diagnostic status indicator LED.
+         */
+
+        bool  servosync_enable;
+        bool  servosync_led_enable;
+        Pin*  servosync_inp_pin;
+        Pin*  servosync_led_pin;
+
+
+
+
 };
 
 

@@ -33,7 +33,7 @@
 #                  default: Release
 #   DEVICES: List of devices for which to build.  This list be space delimited
 #            and can include the following devices:
-#            LPC1768, LPC11U24
+#            LPC1768, LPC11U24, STM32F407XG
 #            default: LPC1768
 #   GPFLAGS: Additional compiler flags used when building C++ sources.
 #   GCFLAGS: Additional compiler flags used when building C sources.
@@ -83,7 +83,7 @@ DEVICES?=lpc1768
 
 # Use DEVICES variable to determine which builds to perform.
 CLEAN_DEVICES=$(addsuffix .clean,$(DEVICES))
-.PHONY: all clean $(DEVICES) $(CLEAN_DEVICES) deploy deploy-lpc1768 deploy-lpc11u24
+.PHONY: all clean $(DEVICES) $(CLEAN_DEVICES) deploy deploy-lpc1768 deploy-lpc11u24 deploy-stm32f407xg
 
 all: $(DEVICES)
 
@@ -97,6 +97,12 @@ $(DEVICES):
 $(CLEAN_DEVICES): %.clean:
 	@echo Cleaning up for device $*
 	@$(MAKE) -f $(BUILD_DIR)/$*.mk clean
+
+ifdef STM_DEPLOY
+deploy deploy-stm32f407xg:
+	@echo Deploying to target.
+	$(subst PROJECT,STM32F407xG/$(PROJECT),$(STM_DEPLOY))
+endif
 
 ifdef LPC_DEPLOY
 deploy deploy-lpc1768:

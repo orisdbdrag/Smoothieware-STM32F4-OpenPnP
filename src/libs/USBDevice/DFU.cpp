@@ -1,11 +1,13 @@
+/*
+
+
 #include "DFU.h"
 
 // #include <LPC17xx.h>
-#include "lpc17xx_wdt.h"
-
 #include <stdio.h>
 #include <mri.h>
 #include <cstring>
+#include "../_LPC17xx/LPC17xxLib/inc/lpc17xx_wdt.h"
 
 DFU::DFU(USB *u)
 {
@@ -113,3 +115,6 @@ void DFU::on_idle(void* argument)
         }
     }
 }
+
+
+*/
