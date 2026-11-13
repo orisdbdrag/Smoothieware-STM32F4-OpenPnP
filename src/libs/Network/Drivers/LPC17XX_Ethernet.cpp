@@ -6,7 +6,7 @@
 #include <cstring>
 #include <cstdio>
 
-#include "lpc17xx_clkpwr.h"
+#include "../../_LPC17xx/LPC17xxLib/inc/lpc17xx_clkpwr.h"
 
 #include <mri.h>
 

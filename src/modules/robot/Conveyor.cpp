@@ -63,8 +63,6 @@ Conveyor::Conveyor()
     running = false;
     allow_fetch = false;
     flush= false;
-    continuous_mode = 0;
-    hold_queue= false;
 }
 
 void Conveyor::on_module_loaded()
@@ -82,28 +80,14 @@ void Conveyor::on_module_loaded()
 void Conveyor::start(uint8_t n)
 {
     Block::init(n); // set the number of motors which determines how big the tick info vector is
-    // planner_queue_size may be too big for the memory available, use the biggest queue that fits instead of crashing
-    size_t wanted = queue_size;
-    while(!queue.resize(queue_size)) {
-        if(queue_size <= 2) {
-            THEKERNEL->streams->printf("ERROR: not enough memory for the planner queue, not starting\n");
-            return;
-        }
-        queue_size /= 2;
-    }
-    if(queue_size != wanted) {
-        THEKERNEL->streams->printf("WARNING: planner_queue_size %d does not fit in memory, using %d\n", (int)wanted, (int)queue_size);
-    }
+    queue.resize(queue_size);
     running = true;
 }
 
 void Conveyor::on_halt(void* argument)
 {
     if(argument == nullptr) {
-        // marks queue to be flushed next time get_next_block() is called
         flush_queue();
-        hold_queue= false;
-        continuous_mode= 0;
     }
 }
 
@@ -186,88 +170,71 @@ void Conveyor::queue_head_block()
 
     // not sure if this is the correct place but we need to turn on the motors if they were not already on
     THEKERNEL->call_event(ON_ENABLE, (void*)1); // turn all enable pins on
-    // we may have enough to start the queue now
-    check_queue();
 }
+
+
+
+/**
+ * @brief Manages the step execution gate by evaluating look-ahead queue accumulation.
+ *
+ * Standard Smoothieware logic opens the gate based on a config time delay, a full queue state,
+ * or an upstream trigger with the `force` flag enabled. For streaming patterns where multiple
+ * movement commands are quickly dispatched followed by a synchronization trigger, the original
+ * flow waits until the timeout expires or the flush trigger arrives.
+ *
+ * This modification optimizes the stream response:
+ * 1. It calculates the exact block depth instantly using raw index tracking.
+ * 2. It opens the gate immediately as soon as 2 or more blocks are present, allowing the look-ahead
+ *    planner to start executing blended movements without waiting for the rest of the stream.
+ * 3. The time delay safeguard remains active only for single isolated movements, ensuring an
+ *    immediate fallback response when consecutive blocks are not expected.
+ *
+ * @param force Flag passed by upstream synchronization methods to override depth thresholds and flush the queue (e.g., M400 context).
+ */
 
 void Conveyor::check_queue(bool force)
 {
     static uint32_t last_time_check = us_ticker_read();
 
-    if(queue.is_empty()) {
+    if (queue.is_empty()) {
         allow_fetch = false;
-        last_time_check = us_ticker_read(); // reset timeout
+        last_time_check = us_ticker_read();
         return;
     }
 
-    // if we have been waiting for more than the required waiting time and the queue is not empty, or the queue is full, then allow stepticker to get the tail
-    // we do this to allow an idle system to pre load the queue a bit so the first few blocks run smoothly.
-    if(force || queue.is_full() || (us_ticker_read() - last_time_check) >= (queue_delay_time_ms * 1000)) {
-        last_time_check = us_ticker_read(); // reset timeout
-        if(!flush) allow_fetch = true;
-        return;
+
+    uint32_t tail = queue.tail_i;
+    uint32_t head = queue.head_i;
+    int blocks_in_queue = (head >= tail) ? (head - tail) : (queue.length - tail + head);
+
+    // Dispatch conditions: instantly triggers execution loop if look-ahead pipeline has accumulated >= 2 blocks.
+
+    if (force || (blocks_in_queue >= 2) || (us_ticker_read() - last_time_check) >= (queue_delay_time_ms * 1000)) {
+        allow_fetch = true;
+        last_time_check = us_ticker_read();
     }
 }
 
-bool Conveyor::set_continuous_mode(bool f)
-{
-    if(f) {
-        if(queue.is_empty() || !hold_queue) return false;
 
-        // copy the tickinfo of the second block on the queue
-        auto n_actuators= THEROBOT->get_number_registered_motors();
-        Block* b= queue.item_ref(queue.next(queue.tail_i));
-        Block::tickinfo_t *saved= new Block::tickinfo_t[n_actuators];
-        if(saved == nullptr) return false;
-        for(int i = 0; i < n_actuators; ++i) {
-            saved[i]= b->tick_info[i];
-        }
 
-        saved_block= saved;
-        continuous_mode= 1;
 
-    }else{
-        continuous_mode= 0;
-        if(saved_block != nullptr) {
-            Block::tickinfo_t *saved= static_cast<Block::tickinfo_t *>(saved_block);
-            delete [] saved;
-            saved_block= nullptr;
-        }
-    }
-    return true;
-}
+
+
 
 // called from step ticker ISR
 bool Conveyor::get_next_block(Block **block)
 {
-    // this is used to allow us to put blocks onto an empty queue and not start until we say so
-    // do not use to hold the queue when it is running otherwise it will stop with zero deceleration
-    if(hold_queue) return false;
-
-    if(flush){
-        // mark entire queue for GC if flush flag is asserted
+    // mark entire queue for GC if flush flag is asserted
+    if (flush){
         while (queue.isr_tail_i != queue.head_i) {
             queue.isr_tail_i = queue.next(queue.isr_tail_i);
         }
-        flush = false;
     }
 
-
-    // default the feedrate to zero if there is no block available
+    // default the feerate to zero if there is no block available
     this->current_feedrate= 0;
 
     if(THEKERNEL->is_halted() || queue.isr_tail_i == queue.head_i) return false; // we do not have anything to give
-
-    if(continuous_mode > 1){
-        // keep feeding the second in the queue
-        Block *b= queue.item_ref(queue.isr_tail_i);
-        // reset variable parts of the block
-        b->reset(static_cast<Block::tickinfo_t*>(saved_block));
-        b->is_ticking= true;
-        this->current_feedrate= b->nominal_speed;
-        *block= b;
-        return true;
-    }
 
     // wait for queue to fill up, optimizes planning
     if(!allow_fetch) return false;
@@ -278,6 +245,7 @@ bool Conveyor::get_next_block(Block **block)
         if(!b->is_ready) __debugbreak(); // should never happen
 
         b->is_ticking= true;
+        b->recalculate_flag= false;
         this->current_feedrate= b->nominal_speed;
         *block= b;
         return true;
@@ -287,14 +255,10 @@ bool Conveyor::get_next_block(Block **block)
 }
 
 // called from step ticker ISR when block is finished, do not do anything slow here
-// if in continuous mode we keep feeding the same block
 void Conveyor::block_finished()
 {
-    if(continuous_mode <= 1){
-        // we increment the isr_tail_i so we can get the next block
-        queue.isr_tail_i= queue.next(queue.isr_tail_i);
-        if(continuous_mode == 1) continuous_mode= 2;
-    }
+    // we increment the isr_tail_i so we can get the next block
+    queue.isr_tail_i= queue.next(queue.isr_tail_i);
 }
 
 /*
@@ -310,16 +274,22 @@ void Conveyor::flush_queue()
     flush= true;
 
     // TODO force deceleration of last block
+
+    // now wait until the block queue has been flushed
+    wait_for_idle(false);
+
+    flush= false;
 }
 
 // Debug function
 void Conveyor::dump_queue()
 {
-    int i = 0;
-    unsigned int index = queue.tail_i;
-    while(index != queue.head_i) {
-        THEKERNEL->streams->printf("block %03d > ", ++i);
+    for (unsigned int index = queue.tail_i, i = 0; true; index = queue.next(index), i++ ) {
+        THEKERNEL->streams->printf("block %03d > ", i);
         queue.item_ref(index)->debug();
-        index = queue.next(index);
+
+        if (index == queue.head_i)
+            break;
     }
 }
+

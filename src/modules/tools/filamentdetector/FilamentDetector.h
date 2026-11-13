@@ -30,7 +30,6 @@ private:
     void send_command(std::string msg, StreamOutput *stream);
     uint32_t button_tick(uint32_t dummy);
     float get_emove();
-    bool is_suspended() const;
 
     mbed::InterruptIn *encoder_pin{0};
     Pin bulge_pin;
@@ -43,8 +42,7 @@ private:
     struct {
         bool filament_out_alarm:1;
         bool bulge_detected:1;
+        bool suspended:1;
         bool active:1;
-        bool was_retract:1;
-        bool leave_heaters_on:1;
     };
 };

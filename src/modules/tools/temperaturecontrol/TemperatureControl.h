@@ -20,6 +20,7 @@ class TemperatureControl : public Module {
         ~TemperatureControl();
 
         void on_module_loaded();
+        void on_main_loop(void* argument);
         void on_gcode_received(void* argument);
         void on_second_tick(void* argument);
         void on_get_public_data(void* argument);

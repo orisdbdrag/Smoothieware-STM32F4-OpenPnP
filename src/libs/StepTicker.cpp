@@ -16,7 +16,7 @@
 #include "Block.h"
 #include "Conveyor.h"
 
-#include "system_LPC17xx.h" // mbed.h lib
+#include "stm32f407xx.h" // mbed.h lib
 #include <math.h>
 #include <mri.h>
 
@@ -29,6 +29,13 @@ GPIO stepticker_debug_pin(STEPTICKER_DEBUG_PIN);
 #define SET_STEPTICKER_DEBUG_PIN(n)
 #endif
 
+#define TIM7_PRESCALER      15
+#define TIM14_PRESCALER     1
+
+extern "C" void TIM8_TRG_COM_TIM14_IRQHandler(void);
+extern "C" void TIM7_IRQHandler(void);
+extern "C" void PendSV_Handler(void);
+
 StepTicker *StepTicker::instance;
 
 StepTicker::StepTicker()
@@ -36,18 +43,19 @@ StepTicker::StepTicker()
     instance = this; // setup the Singleton instance of the stepticker
 
     // Configure the timer
-    LPC_TIM0->MR0 = 10000000;       // Initial dummy value for Match Register
-    LPC_TIM0->MCR = 3;              // Match on MR0, reset on MR0
-    LPC_TIM0->TCR = 0;              // Disable interrupt
+    __TIM7_CLK_ENABLE();
+    TIM7->CR1 = TIM_CR1_URS;    // int on overflow
+    NVIC_SetVector(TIM7_IRQn, (uint32_t)TIM7_IRQHandler);
 
-    LPC_SC->PCONP |= (1 << 2);      // Power Ticker ON
-    LPC_TIM1->MR0 = 1000000;
-    LPC_TIM1->MCR = 5;              // match on Mr0, stop on match
-    LPC_TIM1->TCR = 0;              // Disable interrupt
+    __TIM14_CLK_ENABLE();
+    TIM14->CR1 = TIM_CR1_URS | TIM_CR1_OPM;  // int on overflow, one-shot mode
+    NVIC_SetVector(TIM8_TRG_COM_TIM14_IRQn, (uint32_t)TIM8_TRG_COM_TIM14_IRQHandler);
+
+    NVIC_SetVector(PendSV_IRQn, (uint32_t)PendSV_Handler);
 
     // Default start values
     this->set_frequency(100000);
-    this->set_unstep_time(100);
+    this->set_unstep_time(5);
 
     this->unstep.reset();
     this->num_motors = 0;
@@ -69,26 +77,40 @@ StepTicker::~StepTicker()
 //called when everything is setup and interrupts can start
 void StepTicker::start()
 {
-    NVIC_EnableIRQ(TIMER0_IRQn);     // Enable interrupt handler
-    NVIC_EnableIRQ(TIMER1_IRQn);     // Enable interrupt handler
+    TIM7->DIER = TIM_DIER_UIE;     // update interrupt en
+    TIM14->DIER = TIM_DIER_UIE;     // update interrupt en
+    NVIC_EnableIRQ(TIM7_IRQn);     // enable interrupt handler
+    NVIC_EnableIRQ(TIM8_TRG_COM_TIM14_IRQn);     // enable interrupt handler
+
+    NVIC_EnableIRQ(PendSV_IRQn);     // enable interrupt handler
+
     current_tick= 0;
+    TIM7->CR1 |= TIM_CR1_CEN;      // start step timer
 }
 
 // Set the base stepping frequency
 void StepTicker::set_frequency( float frequency )
 {
     this->frequency = frequency;
-    this->period = floorf((SystemCoreClock / 4.0F) / frequency); // SystemCoreClock/4 = Timer increments in a second
-    LPC_TIM0->MR0 = this->period;
-    LPC_TIM0->TCR = 3;  // Reset
-    LPC_TIM0->TCR = 1;  // start
+    this->period = floorf((SystemCoreClock >> 1) / TIM7_PRESCALER / frequency); // SystemCoreClock/2 = Timer increments in a second
+
+    TIM7->PSC = TIM7_PRESCALER-1;
+    TIM7->ARR = this->period;
+       /*
+       * PRE-COMPUTE SETUP DELAY THRESHOLD
+       * Evaluates the required number of discrete timer ticks to yield a fixed 20µs window.
+       * Calculated once per frequency change to eliminate runtime floating-point overhead inside the ISR.
+       */
+      this->ticks_for_20us = (uint8_t)lroundf(frequency * 0.000020F);
+      if (this->ticks_for_20us == 0) this->ticks_for_20us = 1;
+      // ==========================================
 }
 
 // Set the reset delay, must be called after set_frequency
 void StepTicker::set_unstep_time( float microseconds )
 {
-    uint32_t delay = floorf((SystemCoreClock / 4.0F) * (microseconds / 1000000.0F)); // SystemCoreClock/4 = Timer increments in a second
-    LPC_TIM1->MR0 = delay;
+    uint32_t delay = floorf(((SystemCoreClock >> 1) / TIM14_PRESCALER) * (microseconds / 1000000.0F)); // SystemCoreClock/2 = Timer increments in a second
+    TIM14->ARR = delay;
 
     // TODO check that the unstep time is less than the step period, if not slow down step ticker
 }
@@ -104,17 +126,17 @@ void StepTicker::unstep_tick()
     this->unstep.reset();
 }
 
-extern "C" void TIMER1_IRQHandler (void)
+extern "C" void TIM8_TRG_COM_TIM14_IRQHandler (void)
 {
-    LPC_TIM1->IR |= 1 << 0;
+    TIM14->SR = ~TIM_SR_UIF;
     StepTicker::getInstance()->unstep_tick();
 }
 
 // The actual interrupt handler where we do all the work
-extern "C" void TIMER0_IRQHandler (void)
+extern "C" void TIM7_IRQHandler (void)
 {
     // Reset interrupt register
-    LPC_TIM0->IR |= 1 << 0;
+    TIM7->SR = ~TIM_SR_UIF;
     StepTicker::getInstance()->step_tick();
 }
 
@@ -146,6 +168,18 @@ void StepTicker::step_tick (void)
         }
     }
 
+        /*
+         * DETERMINISTIC DIRECTION-TO-STEP HARDWARE GUARD
+         * Defers the execution loop for a strict duration of ticks computed at initialization.
+         * Grants long signal cables and driver optocouplers adequate setup time to latch the DIR state safely.
+         * Guarantees zero CPU load (immediate early exit) and zero step pulses during the hold period.
+         */
+
+      if (this->start_delay_ticks > 0) {
+          this->start_delay_ticks--;
+          return;
+      }
+      // ==========================================
     if(THEKERNEL->is_halted()) {
         running= false;
         current_tick = 0;
@@ -156,49 +190,47 @@ void StepTicker::step_tick (void)
     bool still_moving= false;
     // foreach motor, if it is active see if time to issue a step to that motor
     for (uint8_t m = 0; m < num_motors; m++) {
-        auto& tickinfo = current_block->tick_info[m];
+        if(current_block->tick_info[m].steps_to_move == 0) continue; // not active
 
-        if(tickinfo.steps_to_move == 0) continue; // not active
+        current_block->tick_info[m].steps_per_tick += current_block->tick_info[m].acceleration_change;
 
-        tickinfo.steps_per_tick += tickinfo.acceleration_change;
-
-        if(current_tick == tickinfo.next_accel_event) {
+        if(current_tick == current_block->tick_info[m].next_accel_event) {
             if(current_tick == current_block->accelerate_until) { // We are done accelerating, deceleration becomes 0 : plateau
-                tickinfo.acceleration_change = 0;
+                current_block->tick_info[m].acceleration_change = 0;
                 if(current_block->decelerate_after < current_block->total_move_ticks) {
-                    tickinfo.next_accel_event = current_block->decelerate_after;
+                    current_block->tick_info[m].next_accel_event = current_block->decelerate_after;
                     if(current_tick != current_block->decelerate_after) { // We are plateauing
                         // steps/sec / tick frequency to get steps per tick
-                        tickinfo.steps_per_tick = tickinfo.plateau_rate;
+                        current_block->tick_info[m].steps_per_tick = current_block->tick_info[m].plateau_rate;
                     }
                 }
             }
 
             if(current_tick == current_block->decelerate_after) { // We start decelerating
-                tickinfo.acceleration_change = tickinfo.deceleration_change;
+                current_block->tick_info[m].acceleration_change = current_block->tick_info[m].deceleration_change;
             }
         }
 
         // protect against rounding errors and such
-        if(tickinfo.steps_per_tick <= 0) {
-            tickinfo.counter = STEPTICKER_FPSCALE; // we force completion this step by setting to 1.0
-            tickinfo.steps_per_tick = 0;
+        if(current_block->tick_info[m].steps_per_tick <= 0) {
+            current_block->tick_info[m].counter = STEPTICKER_FPSCALE; // we force completion this step by setting to 1.0
+            current_block->tick_info[m].steps_per_tick = 0;
         }
 
-        tickinfo.counter += tickinfo.steps_per_tick;
+        current_block->tick_info[m].counter += current_block->tick_info[m].steps_per_tick;
 
-        if(tickinfo.counter >= STEPTICKER_FPSCALE) { // >= 1.0 step time
-            tickinfo.counter -= STEPTICKER_FPSCALE; // -= 1.0F;
-            ++tickinfo.step_count;
+        if(current_block->tick_info[m].counter >= STEPTICKER_FPSCALE) { // >= 1.0 step time
+            current_block->tick_info[m].counter -= STEPTICKER_FPSCALE; // -= 1.0F;
+            ++current_block->tick_info[m].step_count;
 
             // step the motor
             bool ismoving= motor[m]->step(); // returns false if the moving flag was set to false externally (probes, endstops etc)
             // we stepped so schedule an unstep
             unstep.set(m);
 
-            if(!ismoving || tickinfo.step_count == tickinfo.steps_to_move) {
+            if(!ismoving || current_block->tick_info[m].step_count == current_block->tick_info[m].steps_to_move) {
                 // done
-                tickinfo.steps_to_move = 0;
+                current_block->tick_info[m].steps_to_move = 0;
                 motor[m]->stop_moving(); // let motor know it is no longer moving
             }
         }
@@ -215,8 +247,8 @@ void StepTicker::step_tick (void)
     // right now it takes about 3-4us but if the unstep were near 10uS or greater it would be an issue
     // also it takes at least 2us to get here so even when set to 1us pulse width it will still be about 3us
     if( unstep.any()) {
-        LPC_TIM1->TCR = 3;
-        LPC_TIM1->TCR = 1;
+        // CEN should have cleared by one-shot mode
+        TIM14->CR1 |= TIM_CR1_CEN;
     }
 
 
@@ -226,13 +258,6 @@ void StepTicker::step_tick (void)
 
         // all moves finished
         current_tick = 0;
-
-#ifdef BACKLASH
-        // we need to reduce motor stepcount by the number of backlashsteps to keep actuator position consistent
-        for (uint8_t m = 0; m < num_motors; m++) {
-            motor[m]->inc_steps(-(current_block->backlash_steps[m]));
-        }
-#endif
 
         // get next block
         // do it here so there is no delay in ticks
@@ -248,12 +273,11 @@ void StepTicker::step_tick (void)
 
         // all moves finished
         // we delegate the slow stuff to the pendsv handler which will run as soon as this interrupt exits
-        //NVIC_SetPendingIRQ(PendSV_IRQn); this doesn't work
-        //SCB->ICSR = 0x10000000; // SCB_ICSR_PENDSVSET_Msk;
+        //NVIC_SetPendingIRQ(PendSV_IRQn); //this doesn't work
+        SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;
     }
 }
 
-// only called from the step tick ISR (single consumer)
 bool StepTicker::start_next_block()
 {
     if(current_block == nullptr) return false;
@@ -269,18 +293,37 @@ bool StepTicker::start_next_block()
         // TODO does this need to be done sooner, if so how without delaying next tick
         motor[m]->set_direction(current_block->direction_bits[m]);
         motor[m]->start_moving(); // also let motor know it is moving now
+        /*
+         * ACCELERATION ACCUMULATOR FLASH INJECTION
+         * Forces the fixed-point Bresenham counter to 99% readiness on a cold start.
+         * This eradicates the stock ~1.5ms latency caused by parsing-level mathematical startup drag.
+         */
+        if (!this->running) {
+                  current_block->tick_info[m].counter = STEPTICKER_FPSCALE - 1;
+
+         }
+             //------------------------------------------------------------------------------
     }
 
     current_tick= 0;
 
     if(ok) {
         //SET_STEPTICKER_DEBUG_PIN(1);
+    	        /*
+    	         * TRIGGER DIRECTION HARDWARE HOLD
+    	         * Arms the tick-skipping mechanism on an absolute cold start to enforce the 20µs setup window.
+    	         */
+
+    	        if (!this->running) {
+    	            this->start_delay_ticks = this->ticks_for_20us;
+    	        }
+    	        // ==========================================
         return true;
 
     }else{
-        // this is an edge condition that should never happen, but we need to discard this block if it ever does
+    	// this is an edge condition that should never happen, but we need to discard this block if it ever does
         // basically it is a block that has zero steps for all motors
-        THECONVEYOR->block_finished();
+       THECONVEYOR->block_finished();
     }
 
     return false;

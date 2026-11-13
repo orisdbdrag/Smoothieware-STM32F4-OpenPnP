@@ -19,19 +19,19 @@
 #ifndef USBBUSINTERFACE_H
 #define USBBUSINTERFACE_H
 
-#include <stdint.h>
-
-// #include "mbed.h"
+#include "mbed.h"
 #include "USBEndpoints.h"
+//#include "mbed_toolchain.h"
 
-class USBHAL : public USB_State_Receiver, public USB_Frame_Receiver, public USB_Endpoint_Receiver {
+//#ifdef __GNUC__
+//#define __packed __attribute__ ((__packed__))
+//#endif
+
+class USBHAL {
 public:
     /* Configuration */
     USBHAL();
     ~USBHAL();
-
-    void init(void);
-
     void connect(void);
     void disconnect(void);
     void configureDevice(void);
@@ -42,51 +42,24 @@ public:
     /* Endpoint 0 */
     void EP0setup(uint8_t *buffer);
     void EP0read(void);
+    void EP0readStage(void);
     uint32_t EP0getReadResult(uint8_t *buffer);
     void EP0write(uint8_t *buffer, uint32_t size);
     void EP0getWriteResult(void);
     void EP0stall(void);
 
     /* Other endpoints */
-    EP_STATUS endpointRead(uint8_t bEP, uint32_t maximumSize);
-    EP_STATUS endpointReadResult(uint8_t bEP, uint8_t *data, uint32_t *bytesRead);
-    EP_STATUS endpointWrite(uint8_t bEP, uint8_t *data, uint32_t size);
-    EP_STATUS endpointWriteResult(uint8_t bEP);
-    uint8_t endpointStatus(uint8_t bEP);
-    void stallEndpoint(uint8_t bEP);
-    void unstallEndpoint(uint8_t bEP);
-    bool realiseEndpoint(uint8_t bEP, uint32_t maxPacket, uint32_t options);
-    bool getEndpointStallState(uint8_t bEP);
-    uint32_t endpointReadcore(uint8_t bEP, uint8_t *buffer);
-
-    uint16_t lastFrame(void);
-
-    bool endpointSetInterrupt(uint8_t bEP, bool enabled);
-    bool endpointGetInterrupt(uint8_t bEP);
-    void endpointTriggerInterrupt(uint8_t bEP);
-
-    /* misc hardware stuff */
-    uint32_t getSerialNumber(int length, uint32_t *buf);
-
-    static void _usbisr(void);
-
-    void usbisr(void);
-    static USBHAL * instance;
-    uint8_t can_transfer[32];
+    EP_STATUS endpointRead(uint8_t endpoint, uint32_t maximumSize);
+    EP_STATUS endpointReadResult(uint8_t endpoint, uint8_t *data, uint32_t *bytesRead);
+    EP_STATUS endpointWrite(uint8_t endpoint, uint8_t *data, uint32_t size);
+    EP_STATUS endpointWriteResult(uint8_t endpoint);
+    void stallEndpoint(uint8_t endpoint);
+    void unstallEndpoint(uint8_t endpoint);
+    bool realiseEndpoint(uint8_t endpoint, uint32_t maxPacket, uint32_t options);
+    bool getEndpointStallState(unsigned char endpoint);
+    uint32_t endpointReadcore(uint8_t endpoint, uint8_t *buffer);
 
 protected:
-    virtual bool USBEvent_busReset(void){return false;};
-    virtual bool USBEvent_connectStateChanged(bool connected){return false;};
-    virtual bool USBEvent_suspendStateChanged(bool suspended){return false;};
-
-    virtual bool USBEvent_Frame(uint16_t){return false;};
-
-    virtual bool USBEvent_Request(CONTROL_TRANSFER&){return false;};
-    virtual bool USBEvent_RequestComplete(CONTROL_TRANSFER&, uint8_t *, uint32_t){return false;};
-
-    virtual bool USBEvent_EPIn(uint8_t, uint8_t){return false;};
-    virtual bool USBEvent_EPOut(uint8_t, uint8_t){return false;};
-
     virtual void busReset(void){};
     virtual void EP0setupCallback(void){};
     virtual void EP0out(void){};
@@ -94,6 +67,77 @@ protected:
     virtual void connectStateChanged(unsigned int connected){};
     virtual void suspendStateChanged(unsigned int suspended){};
     virtual void SOF(int frameNumber){};
-};
 
+#if defined(TARGET_NUC472) || defined(TARGET_M451)
+    // NUC472/M451 USB doesn't support configuration of the same EP number for IN/OUT simultaneously.
+    virtual bool EP1_OUT_callback(){return false;};
+    virtual bool EP2_IN_callback(){return false;};
+    virtual bool EP3_OUT_callback(){return false;};
+    virtual bool EP4_IN_callback(){return false;};
+    virtual bool EP5_OUT_callback(){return false;};
+    virtual bool EP6_IN_callback(){return false;};
+#if ! (defined(TARGET_M451))
+    virtual bool EP7_OUT_callback(){return false;};
+    virtual bool EP8_IN_callback(){return false;};
+    virtual bool EP9_OUT_callback(){return false;};
+    virtual bool EP10_IN_callback(){return false;};
+    virtual bool EP11_OUT_callback(){return false;};
+    virtual bool EP12_IN_callback(){return false;};
+#endif
+#else
+    virtual bool EP1_OUT_callback(){return false;};
+    virtual bool EP1_IN_callback(){return false;};
+    virtual bool EP2_OUT_callback(){return false;};
+    virtual bool EP2_IN_callback(){return false;};
+    virtual bool EP3_OUT_callback(){return false;};
+    virtual bool EP3_IN_callback(){return false;};
+#if !defined(TARGET_STM32F4)
+    virtual bool EP4_OUT_callback(){return false;};
+    virtual bool EP4_IN_callback(){return false;};
+#if !(defined(TARGET_LPC11UXX) || defined(TARGET_LPC11U6X) || defined(TARGET_LPC1347) || defined(TARGET_LPC1549))
+    virtual bool EP5_OUT_callback(){return false;};
+    virtual bool EP5_IN_callback(){return false;};
+    virtual bool EP6_OUT_callback(){return false;};
+    virtual bool EP6_IN_callback(){return false;};
+    virtual bool EP7_OUT_callback(){return false;};
+    virtual bool EP7_IN_callback(){return false;};
+    virtual bool EP8_OUT_callback(){return false;};
+    virtual bool EP8_IN_callback(){return false;};
+    virtual bool EP9_OUT_callback(){return false;};
+    virtual bool EP9_IN_callback(){return false;};
+    virtual bool EP10_OUT_callback(){return false;};
+    virtual bool EP10_IN_callback(){return false;};
+    virtual bool EP11_OUT_callback(){return false;};
+    virtual bool EP11_IN_callback(){return false;};
+    virtual bool EP12_OUT_callback(){return false;};
+    virtual bool EP12_IN_callback(){return false;};
+    virtual bool EP13_OUT_callback(){return false;};
+    virtual bool EP13_IN_callback(){return false;};
+    virtual bool EP14_OUT_callback(){return false;};
+    virtual bool EP14_IN_callback(){return false;};
+    virtual bool EP15_OUT_callback(){return false;};
+    virtual bool EP15_IN_callback(){return false;};
+#endif
+#endif
+#endif
+
+private:
+    void usbisr(void);
+    static void _usbisr(void);
+    static USBHAL * instance;
+
+#if defined(TARGET_LPC11UXX) || defined(TARGET_LPC11U6X) || defined(TARGET_LPC1347) || defined(TARGET_LPC1549)
+    bool (USBHAL::*epCallback[10 - 2])(void);
+#elif (defined(TARGET_STM32F4) && !defined(USB_STM_HAL)) || defined(TARGET_M451)
+    bool (USBHAL::*epCallback[8 - 2])(void);
+#elif defined(TARGET_STM)
+    PCD_HandleTypeDef hpcd;
+#elif defined(TARGET_NUC472) || defined(TARGET_M480)
+    bool (USBHAL::*epCallback[14 - 2])(void);
+#else
+    bool (USBHAL::*epCallback[32 - 2])(void);
+#endif
+
+
+};
 #endif

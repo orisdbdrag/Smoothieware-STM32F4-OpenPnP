@@ -1,8 +1,7 @@
 #ifndef _LPC17XX_ETHERNET_H
 #define _LPC17XX_ETHERNET_H
 
-#include "lpc17xx_emac.h"
-
+#include "../../_LPC17xx/LPC17xxLib/inc/lpc17xx_emac.h"
 #include "Module.h"
 #include "net_util.h"
 

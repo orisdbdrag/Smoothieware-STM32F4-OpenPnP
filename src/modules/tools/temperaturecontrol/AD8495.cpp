@@ -5,6 +5,9 @@
       You should have received a copy of the GNU General Public License along with Smoothie. If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "stm32f4xx.h"
+#undef ADC
+
 #include "AD8495.h"
 #include "libs/Kernel.h"
 #include "libs/Pin.h"

@@ -19,50 +19,116 @@
 #ifndef USBCDC_H
 #define USBCDC_H
 
-#include "USB.h"
-
 /* These headers are included for child class. */
 #include "USBEndpoints.h"
 #include "USBDescriptor.h"
 #include "USBDevice_Types.h"
 
-#include "descriptor_cdc.h"
+#include "USBDevice.h"
 
-class USBCDC: public USB_Endpoint_Receiver {
+class USBCDC: public USBDevice {
 public:
-    USBCDC(USB *);
+
+    /*
+    * Constructor
+    *
+    * @param vendor_id Your vendor_id
+    * @param product_id Your product_id
+    * @param product_release Your preoduct_release
+    * @param connect_blocking define if the connection must be blocked if USB not plugged in
+    */
+    USBCDC(uint16_t vendor_id, uint16_t product_id, uint16_t product_release, bool connect_blocking);
 
 protected:
+
+    /*
+    * Get device descriptor. Warning: this method has to store the length of the report descriptor in reportLength.
+    *
+    * @returns pointer to the device descriptor
+    */
+    virtual const uint8_t * deviceDesc();
+
+    /*
+    * Get string product descriptor
+    *
+    * @returns pointer to the string product descriptor
+    */
+    virtual const uint8_t * stringIproductDesc();
+
+    /*
+    * Get string interface descriptor
+    *
+    * @returns pointer to the string interface descriptor
+    */
+    virtual const uint8_t * stringIinterfaceDesc();
+
+    /*
+    * Get configuration descriptor
+    *
+    * @returns pointer to the configuration descriptor
+    */
+    virtual const uint8_t * configurationDesc();
+
+    /*
+    * Send a buffer. Warning: blocking
+    *
+    * @param endpoint endpoint which will be sent the buffer
+    * @param buffer buffer to be sent
+    * @param size length of the buffer
+    * @returns true if successful
+    */
     bool send(uint8_t * buffer, uint32_t size);
 
+    /*
+    * Send a buffer. Warning: non blocking
+    *
+    * @param endpoint endpoint which will be sent the buffer
+    * @param buffer buffer to be sent
+    * @param size length of the buffer
+    * @returns true if successful
+    */
+    bool send_NB(uint8_t * buffer, uint32_t size);
+
+    /*
+    * Read a buffer from a certain endpoint. Warning: blocking
+    *
+    * @param endpoint endpoint to read
+    * @param buffer buffer where will be stored bytes
+    * @param size the number of bytes read will be stored in *size
+    * @param maxSize the maximum length that can be read
+    * @returns true if successful
+    */
     bool readEP(uint8_t * buffer, uint32_t * size);
+
+    /*
+    * Read a buffer from a certain endpoint. Warning: non blocking
+    *
+    * @param endpoint endpoint to read
+    * @param buffer buffer where will be stored bytes
+    * @param size the number of bytes read will be stored in *size
+    * @param maxSize the maximum length that can be read
+    * @returns true if successful
+    */
     bool readEP_NB(uint8_t * buffer, uint32_t * size);
 
-    virtual bool USBEvent_Request(CONTROL_TRANSFER&);
-    virtual bool USBEvent_RequestComplete(CONTROL_TRANSFER&, uint8_t*, uint32_t);
+    /*
+    * Called by USBCallback_requestCompleted when CDC line coding is changed
+    * Warning: Called in ISR
+    *
+    * @param baud The baud rate
+    * @param bits The number of bits in a word (5-8)
+    * @param parity The parity
+    * @param stop The number of stop bits (1 or 2)
+    */
+    virtual void lineCodingChanged(int baud, int bits, int parity, int stop) {};
 
-    virtual void on_attach(void);
-    virtual void on_detach(void);
+protected:
+    virtual bool USBCallback_request();
+    virtual void USBCallback_requestCompleted(uint8_t *buf, uint32_t length);
+    virtual bool USBCallback_setConfiguration(uint8_t configuration);
+    virtual void USBCallback_busReset(void);
+    volatile bool terminal_connected;
 
-    USB *usb;
-
-    // USB Descriptors
-    usbdesc_iad         CDC_iad;
-    usbdesc_interface   CDC_if;
-    usbcdc_header       CDC_header;
-    usbcdc_callmgmt     CDC_callmgmt;
-    usbcdc_acm          CDC_acm;
-    usbcdc_union        CDC_union;
-
-    usbdesc_interface   CDC_slaveif;
-
-    usbdesc_endpoint    CDC_intep;
-    usbdesc_endpoint    CDC_BulkIn;
-    usbdesc_endpoint    CDC_BulkOut;
-
-    usbdesc_string_l(15) CDC_string;
-
-    usbcdc_line_coding  cdc_line_coding;
 };
 
 #endif

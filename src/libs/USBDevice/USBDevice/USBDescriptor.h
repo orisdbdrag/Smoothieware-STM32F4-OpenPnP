@@ -40,7 +40,7 @@
 #define STRING_OFFSET_IINTERFACE        (5)
 
 /* USB Specification Release Number */
-// #define USB_VERSION_2_0 (0x0200)
+#define USB_VERSION_2_0 (0x0200)
 
 /* Least/Most significant byte of short integer */
 #define LSB(n)  ((n)&0xff)

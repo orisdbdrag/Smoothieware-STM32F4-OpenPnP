@@ -13,7 +13,7 @@
 /** A software serial implementation
  *
  */
-class SoftSerial {
+class SoftSerial: public Stream {
 
 public:
     /**

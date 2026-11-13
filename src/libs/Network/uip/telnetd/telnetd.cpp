@@ -35,7 +35,6 @@
 #include "uip.h"
 #include "telnetd.h"
 #include "shell.h"
-#include "Kernel.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -201,21 +200,6 @@ void Telnetd::senddata(void)
 void Telnetd::get_char(u8_t c)
 {
     if (c == ISO_cr) {
-        return;
-    }
-
-    if(c == '?') {
-        this->output(THEKERNEL->get_query_string().c_str());
-        return;
-    }
-
-    if(c == 'X'-'A'+1) { // CTRL-X
-        THEKERNEL->call_event(ON_HALT, nullptr);
-        if(THEKERNEL->is_grbl_mode()) {
-            this->output("ALARM: Abort during cycle\r\n");
-        } else {
-            this->output("HALTED, M999 or $X to exit HALT state\r\n");
-        }
         return;
     }
 

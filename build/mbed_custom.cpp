@@ -37,7 +37,9 @@ extern unsigned int     __bss_end__;
 extern unsigned int     __StackTop;
 extern "C" unsigned int __end__;
 
-extern "C" int  main(void);
+extern "C" void mbed_sdk_init(void);
+
+extern"C" int  main(void);
 extern "C" void __libc_init_array(void);
 // extern "C" void exit(int ErrorCode);
 extern "C" void _start(void)
@@ -62,6 +64,8 @@ extern "C" void _start(void)
             __debugbreak();
     }
 
+    SetSysClock();
+    mbed_sdk_init();
 
     // MemoryPool stuff - needs to be initialised before __libc_init_array
     // so static ctors can use them

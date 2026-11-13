@@ -85,8 +85,16 @@ else
 CSRCS2 = $(CSRCS1)
 endif
 
+ifeq "$(NOUSB)" "1"
+CSRCS3 = $(filter-out $(SRC)/libs/USBDevice/%,$(CSRCS2))
+DEFINES += -DNOUSB
+else
+CSRCS3 = $(CSRCS2)
+endif
+
+
 # do not compile the src/testframework as that can only be done with rake
-CSRCS = $(filter-out $(SRC)/testframework/%,$(CSRCS2))
+CSRCS = $(filter-out $(SRC)/testframework/%,$(CSRCS3))
 
 ifeq "$(DISABLEMSD)" "1"
 DEFINES += -DDISABLEMSD
@@ -99,22 +107,28 @@ endif
 
 CPPSRCS1 = $(wildcard $(SRC)/*.cpp $(SRC)/*/*.cpp $(SRC)/*/*/*.cpp $(SRC)/*/*/*/*.cpp $(SRC)/*/*/*/*/*.cpp $(SRC)/*/*/*/*/*/*.cpp)
 ifeq "$(NONETWORK)" "1"
-	CPPSRCS2 = $(filter-out $(SRC)/libs/Network/%,$(CPPSRCS1))
+    CPPSRCS2 = $(filter-out $(SRC)/libs/Network/%,$(CPPSRCS1))
 else
-	ifneq "$(PLAN9)" "1"
-		DEFINES += -DNOPLAN9
-		CPPSRCS2 = $(filter-out $(SRC)/libs/Network/uip/plan9/%,$(CPPSRCS1))
-	else
-		CPPSRCS2 = $(CPPSRCS1)
-	endif
+    ifneq "$(PLAN9)" "1"
+        DEFINES += -DNOPLAN9
+        CPPSRCS2 = $(filter-out $(SRC)/libs/Network/uip/plan9/%,$(CPPSRCS1))
+    else
+        CPPSRCS2 = $(CPPSRCS1)
+    endif
+endif
+
+ifeq "$(NOUSB)" "1"
+    CPPSRCS4 = $(filter-out $(SRC)/libs/USBDevice/%,$(CPPSRCS2))
+else
+    CPPSRCS4 = $(CPPSRCS1)
 endif
 
 # CNC build
 ifeq "$(CNC)" "1"
-	CPPSRCS21 = $(filter-out $(SRC)/modules/utils/panel/screens/3dprinter/%,$(CPPSRCS2))
-	DEFINES += -DCNC
+    CPPSRCS21 = $(filter-out $(SRC)/modules/utils/panel/screens/3dprinter/%,$(CPPSRCS4))
+    DEFINES += -DCNC
 else
-	CPPSRCS21 = $(filter-out $(SRC)/modules/utils/panel/screens/cnc/%,$(CPPSRCS2))
+    CPPSRCS21 = $(filter-out $(SRC)/modules/utils/panel/screens/cnc/%,$(CPPSRCS4))
 endif
 
 # Totally exclude any modules listed in EXCLUDE_MODULES
@@ -207,7 +221,7 @@ AS_FLAGS += -g3 $(DEVICE_FLAGS)
 # Linker Options.
 LDFLAGS = $(DEVICE_FLAGS) -specs=$(BUILD_DIR)/startfile.spec
 LDFLAGS += -Wl,-Map=$(OUTDIR)/$(PROJECT).map,--cref,--gc-sections,--wrap=_isatty,--wrap=malloc,--wrap=realloc,--wrap=free$(MRI_WRAPS)
-LDFLAGS += -T$(LSCRIPT)  -L $(EXTERNAL_DIR)/gcc/LPC1768
+LDFLAGS += -T$(LSCRIPT)  -L $(EXTERNAL_DIR)/gcc/$(DEVICE)
 ifneq "$(NO_FLOAT_SCANF)" "1"
 LDFLAGS += -u _scanf_float
 endif
@@ -316,7 +330,8 @@ $(OUTDIR)/%.o : %.s makefile
 	$(Q) $(MKDIR) $(call convert-slash,$(dir $@)) $(QUIET)
 	$(Q) $(AS) $(AS_FLAGS) -o $@ $<
 
+# objcopy can't create m4 compatible object files, replace with assembler
 $(OUTDIR)/configdefault.o : config.default
-	$(Q) $(OBJCOPY) -I binary -O elf32-littlearm -B arm --readonly-text --rename-section .data=.rodata.configdefault $< $@
+#	$(Q) $(OBJCOPY) -I binary -O elf32-littlearm -B arm --readonly-text --rename-section .data=.rodata.configdefault $< $@
 
 #########################################################################

@@ -1,10 +1,224 @@
-# This is a place for the user to specify their own 'firm' defaults at compile time
-# One can also use this as the primary config system if an sdcard is unavailable
-# The format of this file is identical to that of a normal config file
-#
-# to have git ignore this file so you can keep your own defaults in here that are
-# preserved through updates run this command:
-# git update-index --assume-unchanged src/config.default
-#
+# NOTE Lines must not exceed 132 characters
+# ============================================================================
+# CNC CONFIG FOR OPENPNP (STM32F407 5-AXIS): MOTION & AXES
+# ============================================================================
 
+grbl_mode                                    false            # Disable GRBL-specific communication mode
+
+# Base Feed Rate Settings
+default_feed_rate                            4000             # Default feed rate for G1/G2/G3 moves [mm/min]
+default_seek_rate                            4000             # Seek rate for G0 rapid moves [mm/min]
+mm_per_arc_segment                           0.0              # Segment length for arcs, 0 disables forced segmentation
+mm_max_arc_error                             0.01             # Maximum allowable error when calculating arcs [mm]
+
+# Path Planner & Acceleration
+planner_queue_size                           32               # Size of the motion command buffer queue
+queue_delay_time_ms                          100              # Delay time in milliseconds before starting execution
+acceleration                                 3000             # Global linear acceleration [mm/sec²]
+junction_deviation                           0.05             # Junction deviation factor (cornering jerk-smoothing)
+
+# Stepper Driver Pulse Settings
+microseconds_per_step_pulse                  1.3              # Duration of step pulses to stepper drivers, in microseconds
+base_stepping_frequency                      200000           # Base frequency for stepping, higher gives smoother movement
+
+# Axis Speed Limits (Gantry Cartridge)
+x_axis_max_speed                             120000            # Maximum X-axis speed [mm/min]
+y_axis_max_speed                             120000            # Maximum Y-axis speed [mm/min]
+z_axis_max_speed                             666666           # Maximum Z-axis speed [mm/min]
+
+# ============================================================================
+# MAIN LINEAR MOTION AXES (XYZ) 
+# ============================================================================
+
+# X AXIS (Alpha)
+alpha_steps_per_mm                           100              # Microsteps per mm for X axis
+alpha_step_pin                               PC14             # Step pulse output pin
+alpha_dir_pin                                PC13             # Direction control pin (inverted)
+alpha_en_pin                                 PE6!             # Enable signal pin (inverted)
+alpha_current                                1.5              # Driver current setting [Amps]
+alpha_max_rate                               120000.0         # Maximum allowed rate for Alpha axis [mm/min]
+
+# Y AXIS (Beta)
+beta_steps_per_mm                            100              # Microsteps per mm for Y axis
+beta_step_pin                                PE5              # Step pulse output pin
+beta_dir_pin                                 PE4              # Direction control pin (inverted)
+beta_en_pin                                  PE3!             # Enable signal pin (inverted)
+beta_current                                 1.5              # Driver current setting [Amps]
+beta_max_rate                                120000.0         # Maximum allowed rate for Beta axis [mm/min]
+
+# Z AXIS (Gamma)
+gamma_steps_per_mm                           18               # Microsteps per mm for Z axis
+gamma_step_pin                               PE1              # Step pulse output pin
+gamma_dir_pin                                PE0              # Direction control pin (inverted)
+gamma_en_pin                                 PB7!             # Enable signal pin (inverted)
+gamma_current                                1.5              # Driver current setting [Amps]
+gamma_max_rate                               666666           # Maximum allowed rate for Gamma axis [mm/min]
+
+# ============================================================================
+# ROTATIONAL NOZZLE AXES (A & B)
+# ============================================================================
+
+# A AXIS (Left Nozzle)
+delta_steps_per_mm                           4.444            # Microsteps per degree for A axis
+delta_step_pin                               PB5!             # Step pulse output pin
+delta_dir_pin                                PB4!             # Direction control pin (inverted)
+delta_en_pin                                 PB3!             # Enable signal pin (inverted)
+delta_current                                0.5              # Driver current setting [Amps]
+a_axis_max_speed                             350000           # Maximum speed configuration [°/min]
+delta_max_rate                               350000           # Maximum hardware rate limit [°/min]
+delta_acceleration                           500000           # Rotational acceleration limit [°/sec²]
+
+# B AXIS (Right Nozzle)
+epsilon_steps_per_mm                         4.444            # Microsteps per degree for B axis
+epsilon_step_pin                             PD6!             # Step pulse output pin
+epsilon_dir_pin                              PD5!             # Direction control pin (inverted)
+epsilon_en_pin                               PD4!             # Enable signal pin (inverted)
+epsilon_current                              0.5              # Driver current setting [Amps]
+b_axis_max_speed                             350000           # Maximum speed configuration [°/min]
+epsilon_max_rate                             350000           # Maximum hardware rate limit [°/min]
+epsilon_acceleration                         500000           # Rotational acceleration limit [°/sec²]
+
+# ============================================================================
+# CNC CONFIG FOR OPENPNP (STM32F407 5-AXIS): SYSTEM, SWITCHES & ENDSTOPS
+# ============================================================================
+
+# ============================================================================
+# COMMUNICATION & SYSTEM INTERFACES
+# ============================================================================
+uart0.baud_rate                              4000000          # High-speed UART baud rate for smooth controller feedback
+rts_cts_handshake                            2                # Hardware flow control mode:
+                                                              # 0: no RTS/CTS handshake
+                                                              # 1: RTS (PA12) / CTS (PA11)
+                                                              # 2: RTS (PA5) only
+
+
+kill_button_enable                           true             # Enable safety emergency stop button
+kill_button_pin                              PA13^            # Pin for E-Stop button with internal pull-up resistor
+
+
+# System Status Indicators
+leds_disable                                 false            # Enable onboard status LEDs functionality
+
+watchdog_timeout                             4                # Hardware watchdog reset timeout interval [seconds]
+
+
+# ============================================================================
+# PERIPHERAL CONTROL MODULES (SWITCHES) 
+# ============================================================================
+
+# VACUUM 1 (Left Nozzle Valve)
+switch.vac1.enable                           true             # Enable switch module for Vacuum 1
+switch.vac1.input_on_command                 M106             # G-code command to turn Vacuum 1 ON
+switch.vac1.input_off_command                M107             # G-code command to turn Vacuum 1 OFF
+switch.vac1.output_pin                       PD1              # Control pin connected to valve relay/MOSFET
+switch.vac1.output_type                      digital          # Digital ON/OFF logic type
+
+# VACUUM 2 (Right Nozzle Valve)
+switch.vac2.enable                           true             # Enable switch module for Vacuum 2
+switch.vac2.input_on_command                 M108             # G-code command to turn Vacuum 2 ON
+switch.vac2.input_off_command                M109             # G-code command to turn Vacuum 2 OFF
+switch.vac2.output_pin                       PD2              # Control pin connected to valve relay/MOSFET
+switch.vac2.output_type                      digital          # Digital ON/OFF logic type
+
+# BLOW BACK 1 (Left Nozzle Ejection Puff)
+switch.blow1.enable                          true             # Enable switch module for Blow back 1
+switch.blow1.input_on_command                M78              # G-code command to trigger blow back 1 ON
+switch.blow1.input_off_command               M79              # G-code command to trigger blow back 1 OFF
+switch.blow1.output_pin                      PC6              # Control pin for the air-release valve
+switch.blow1.output_type                     digital          # Digital ON/OFF logic type
+
+# BLOW BACK 2 (Right Nozzle Ejection Puff)
+switch.blow2.enable                          true             # Enable switch module for Blow back 2
+switch.blow2.input_on_command                M80              # G-code command to trigger blow back 2 ON
+switch.blow2.input_off_command               M81              # G-code command to trigger blow back 2 OFF
+switch.blow2.output_pin                      PC7              # Control pin for the air-release valve
+switch.blow2.output_type                     digital          # Digital ON/OFF logic type
+
+# UPWARD CAMERA LIGHT (Top Lighting Setup)
+switch.up_cam_light.enable                   true             # Enable switch module for top vision camera LEDs
+switch.up_cam_light.input_on_command         M42              # G-code command to turn top lights ON
+switch.up_cam_light.input_off_command        M43              # G-code command to turn top lights OFF
+switch.up_cam_light.output_pin               PD13             # Control pin for the LED driver channel
+switch.up_cam_light.output_type              digital          # Digital ON/OFF logic type
+switch.up_cam_light.coordinate               false 
+
+# DOWNWARD CAMERA LIGHT (Bottom Vision Setup)
+switch.down_cam_light.enable                 true             # Enable switch module for bottom vision camera LEDs
+switch.down_cam_light.input_on_command       M45              # G-code command to turn bottom lights ON
+switch.down_cam_light.input_off_command      M46              # G-code command to turn bottom lights OFF
+switch.down_cam_light.output_pin             PE13             # PD12 Control pin for the LED driver channel
+switch.down_cam_light.output_type            digital          # Digital ON/OFF logic type
+switch.down_cam_light.coordinate             false
+
+# ============================================================================
+# HARDWARE ENDSTOPS CONFIGURATION
+# ============================================================================
+
+# X Endstop (Alpha Minimum)
+endstop.minx.enable                          true             # Enable X-axis limit switch
+endstop.minx.pin                             PA14!^           # X-stop pin, inverted logic with pull-up resistor
+endstop.minx.homing_direction                home_to_min      # Home towards the minimum workspace position
+endstop.minx.homing_position                 0                # Coordinate assignment at home position [mm]
+endstop.minx.axis                            X                # Map switch module to X axis
+endstop.minx.max_travel                      390              # Maximum physical length of travel [mm]
+endstop.minx.fast_rate                       30               # Initial fast homing seek speed [mm/sec]
+endstop.minx.slow_rate                       5                # Secondary precise homing catch speed [mm/sec]
+endstop.minx.retract                         5                # Retraction distance after first trigger [mm]
+
+
+# Y Endstop (Beta Maximum)
+endstop.maxy.enable                          true             # Enable Y-axis limit switch
+endstop.maxy.pin                             PA15!^           # Y-stop pin, inverted logic with pull-up resistor
+endstop.maxy.homing_direction                home_to_max      # Home towards the maximum workspace position
+endstop.maxy.homing_position                 408              # Coordinate assignment at home position [mm]
+endstop.maxy.axis                            Y                # Map switch module to Y axis
+endstop.maxy.max_travel                      420              # Maximum physical length of travel [mm]
+endstop.maxy.fast_rate                       30               # Initial fast homing seek speed [mm/sec]
+endstop.maxy.slow_rate                       5                # Secondary precise homing catch speed [mm/sec]
+endstop.maxy.retract                         5                # Retraction distance after first trigger [mm]
+endstop.maxy.release_first                   true             # Release endstop state before final alignment move
+
+# Z Endstop (Gamma Minimum)
+endstop.minz.enable                          true             # Enable Z-axis limit switch
+endstop.minz.pin                             PB13^            # Z-stop pin, inverted logic with pull-up resistor
+endstop.minz.homing_direction                home_to_max      # Home towards the minimum workspace position
+endstop.minz.homing_position                 8.35             # Coordinate assignment at home position [mm]
+endstop.minz.axis                            Z                # Map switch module to Z axis
+endstop.minz.max_travel                      200              # Maximum physical length of travel [mm]
+endstop.minz.fast_rate                       30               # Initial fast homing seek speed [mm/sec]
+endstop.minz.slow_rate                       10               # Secondary precise homing catch speed [mm/sec]
+endstop.minz.retract                         5                # Retraction distance after first trigger [mm]
+endstop.minz.release_first                   true             # Release endstop state before final alignment move
+
+# Software Axis Workspace Limits
+soft_endstop.enable                          true             # Globally enable software travel boundaries
+soft_endstop.x_min                           0                # Minimum safe X position limit [mm]
+soft_endstop.x_max                           390              # Maximum safe X position limit [mm]
+soft_endstop.y_min                           0                # Minimum safe Y position limit [mm]
+soft_endstop.y_max                           420              # Maximum safe Y position limit [mm]
+soft_endstop.z_min                           -62              # Minimum safe Z position limit [mm]
+soft_endstop.z_max                           62               # Maximum safe Z position limit [mm]
+soft_endstop.halt                            false            # Do not trigger full system halt on software boundary hit
+
+homing_order                                 ZXY              # Sequential axis homing priority sequence
+home_z_first                                 true             # Force Z axis to home completely before XY movement
+
+
+# --- SERVO SYNC M400 BLOCK ---
+servo_sync.setup.enable                      true             # Enable servo settling synchronization
+servo_sync.setup.led                         true             # Enable visual status LED for settling tracking
+servo_sync.setup.inp_pin                     PB12^            # Input pin for Servo INP feedback
+servo_sync.setup.led_pin                     PA2              # Output pin for the settling status notification LED
+
+
+# --- CAN BRIDGE (M777 P[ID] N[idx] S[val]) ---
+can_bridge.enable                            true             # Enable CAN module
+can_bridge.baudrate                          1000000          # Bus speed. Supported: 500000 or 1000000 only
+can_bridge.coordinate                        false
+
+
+# --- CAN ENDSTOPS (id:0x11/0x10=X, 0x21/0x20=Z) ---
+can_bridge.rx_endstops_enable                true             # Master switch for CAN endstops
+can_bridge.x_endstop_pin                     PA1              # Destination pin for X axis trigger
+can_bridge.z_endstop_pin                     PA0              # Destination pin for Z axis trigger
 

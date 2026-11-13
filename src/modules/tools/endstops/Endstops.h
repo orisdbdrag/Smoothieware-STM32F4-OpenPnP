@@ -35,13 +35,12 @@ class Endstops : public Module{
         void move_to_origin(axis_bitmap_t axis);
         void on_get_public_data(void* argument);
         void on_set_public_data(void* argument);
-        void check_limits();
+        void on_idle(void *argument);
         bool debounced_get(Pin *pin);
         void process_home_command(Gcode* gcode);
         void set_homing_offset(Gcode* gcode);
         uint32_t read_endstops(uint32_t dummy);
         void handle_park();
-        void on_idle(void*);
 
         // global settings
         float saved_position[3]{0}; // save G28 (in grbl mode)
@@ -77,6 +76,7 @@ class Endstops : public Module{
                 uint8_t axis_index:3;
                 bool home_direction:1; // true min or false max
                 bool homed:1;
+                bool release_first_enable:1;
             };
         };
 
@@ -97,10 +97,5 @@ class Endstops : public Module{
             bool home_z_first:1;
             bool move_to_origin_after_home:1;
             bool park_after_home:1;
-            bool limit_enabled:1;
-            volatile bool trigger_halt:1;
-            volatile bool limits_activated:1;
-            uint8_t triggered_axis:3;
-            bool triggered_direction:1;
         };
 };
