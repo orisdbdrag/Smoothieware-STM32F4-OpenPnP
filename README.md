@@ -27,7 +27,7 @@ Hardware measurements via a 100 MHz logic analyzer (time from final UART stop-bi
 2. **Bypassing StepTicker Standstill Overhead:** Primes the Bresenham accumulator immediately on startup so the first `STEP` fires on the very first timer tick.
 3. **Deterministic 20 µs DIR-to-Step Hardware Guard:** Uses a non-blocking ISR check to enforce a guaranteed **~20 µs** direction setup window without delay blocks.
 4. **Early Motion Gate (`Conveyor::check_queue`):** Gating logic (`blocks_in_queue >= 2 || force`) starts motion immediately after the first two blocks while remaining segments stream via DMA.
-5. **Bare-Metal `bxCAN` Driver (Up to 1 Mbps):** Bypasses HAL overhead to control an STM32G0 toolhead node (`M777` for vacuum/valves/lighting) and poll X/Z endstops. Toolhead firmware repository: [CAN_HEAD_BLOW_STM32](https://github.com)
+5. **Bare-Metal `bxCAN` Driver (Up to 1 Mbps):** Bypasses HAL overhead to control an STM32G0 toolhead node (`M777` for vacuum/valves/lighting) and poll X/Z endstops. Toolhead firmware repository: [CAN_HEAD_BLOW_STM32](https://github.com/orisdbdrag/CAN_HEAD_BLOW_STM32).
 6. **Hardware Servo "Position Complete" Sync:** Routes servo *In-Position* signals to endstops for instant settling on `M400`, offloading 3rd-order S-curve filtering to drives (e.g., Panasonic Minas A6) while stripping unused modules.
 7. **Reworked Watchdog & Workflow Stability Tweaks:** Includes a reworked hardware Watchdog (WDT) implementation alongside various local optimizations for execution speed and operational stability. Most custom modifications are directly annotated with comments inside the source code.
 
@@ -78,6 +78,11 @@ Run **`win_install.cmd`** in the root directory to download and extract the tool
    make clean
    make AXIS=5 PAXIS=5 SHELL=cmd.exe
    ```
+   *(Optional)* To disable the CAN module, either set `can_bridge.enable false` in `src/config.default`, or exclude it entirely at compile time by passing `NOCAN=1`:
+   ```bash
+   make clean
+   make AXIS=5 PAXIS=5 NOCAN=1 SHELL=cmd.exe
+   ```
 4. The binary outputs to **`STM32F407xG/firmware.bin`**.
 
 ### 3. Flash via USB DFU
@@ -85,8 +90,9 @@ Run **`win_install.cmd`** in the root directory to download and extract the tool
 2. Verify WinUSB drivers via Zadig if necessary (`DFU-Upload/zadig-2.4.exe`).
 3. Run **`DFU_firmware.bat`** to flash `STM32F407xG\firmware.bin` using `dfu-util`.
 
+> **Note:** The firmware starts at flash offset **`0x0800C000`** and requires the stock MKS Monster8 bootloader to be present in the first 48 KB of flash memory.
+
 ---
 
 ## License & Disclaimer
 Released under the **GNU General Public License v3.0 (GPLv3)**. Provided **"as is"** for custom high-speed SMT machinery—use at your own risk.
-
