@@ -29,14 +29,14 @@ The firmware supports up to **2 remote endstops** over the CAN bus (typically mo
 Instead of injecting virtual flags directly into Smoothieware's internal endstop module, the CAN bridge physically drives designated GPIO output pins on the MCU. These output pins are jumpered directly to the standard hardware endstop inputs on the MKS Monster8 board. This hardware-loopback architecture creates a fail-safe bridge without altering or compromising Smoothieware's native endstop and homing logic.
 
 * **Zero-Length CAN Frames (0-byte DLC):** Endstop states are encoded directly in the CAN Arbitration ID with zero payload bytes for minimum bus latency. Measured packet-to-pin processing latency is **~3 µs**, which is completely negligible during homing cycles even when combined with CAN frame transmission time.
-* **Heartbeat & Fail-Safe Watchdog:** The remote CAN node must broadcast endstop status updates at least every **500 ms**. If CAN communication goes silent for more than **1500 ms** (timeout), the bridge automatically forces the output pins into a **fail-safe triggered (closed)** state. Because the endstop is virtually closed, the axis is prevented from driving into the physical hard stop if the CAN bus cable disconnects during homing.
+* **Heartbeat & Fail-Safe Watchdog:** The remote CAN node must broadcast endstop status updates at least every **500 ms**. If CAN communication goes silent for more than **1500 ms** (timeout), the bridge automatically forces the output pins into a **fail-safe triggered (opened)** state. Because the endstop is virtually triggered, the axis is prevented from driving into the physical hard stop if the CAN bus cable disconnects during homing.
 
 ### CAN Protocol Table
 
 | Axis | CAN ID (Triggered / Opened) | CAN ID (Idle / Closed) | Payload Length |
 | :--- | :--- | :--- | :--- |
-| **Axis X** | `0x10` | `0x11` | 0 bytes (DLC = 0) |
-| **Axis Z** | `0x20` | `0x21` | 0 bytes (DLC = 0) |
+| **Axis X** | `0x11` | `0x10` | 0 bytes (DLC = 0) |
+| **Axis Z** | `0x21` | `0x20` | 0 bytes (DLC = 0) |
 
 ### Configuration (`src/config.default`)
 Assign the MCU GPIO pins that will output the received CAN endstop states:
