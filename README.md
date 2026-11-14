@@ -60,6 +60,7 @@ rts_cts_handshake                            2                # Hardware flow co
 
 ### Important Limitations vs. Stock Smoothieware
 * **No USB VCP or Ethernet:** Exclusively uses hardware `UART0` with DMA and RTS/CTS to eliminate polling jitter.
+* **No UART Stepper Driver Control:** Software UART configuration for TMC stepper drivers is omitted. If installing StepStick drivers directly onto the MKS Monster8 board, motor current must be adjusted manually via the driver's onboard potentiometer. *(Note: The author's setup uses external servo drives for the XYZ axes and external stepper drivers for the rotary A/B axes).*
 * **Compile-Time Configuration:** Configuration is set in **`src/config.default`** prior to compiling rather than read from an SD card.
 * **Firmware Updates:** Flashed via the MKS Monster8 SD card bootloader or directly over USB in **DFU mode**.
 
