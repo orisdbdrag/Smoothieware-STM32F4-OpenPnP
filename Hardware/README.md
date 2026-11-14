@@ -29,7 +29,7 @@ The firmware supports up to **2 remote endstops** over the CAN bus (typically mo
 Instead of injecting virtual flags directly into Smoothieware's internal endstop module, the CAN bridge physically drives designated GPIO output pins on the MCU. These output pins are jumpered directly to the standard hardware endstop inputs on the MKS Monster8 board. This hardware-loopback architecture creates a fail-safe bridge without altering or compromising Smoothieware's native endstop and homing logic.
 
 * **Zero-Length CAN Frames (0-byte DLC):** Endstop states are encoded directly in the CAN Arbitration ID with zero payload bytes for minimum bus latency. Measured packet-to-pin processing latency is **~3 µs**, which is completely negligible during homing cycles even when combined with CAN frame transmission time.
-* **Heartbeat & Fail-Safe Watchdog:** The remote CAN node must broadcast endstop status updates at least every **500 ms**. If CAN communication goes silent for more than **1500 ms** (timeout), the bridge automatically forces the output pins into an **alarm/triggered (closed)** state. This immediately halts motion and prevents a crash if the CAN cable disconnects during homing.
+* **Heartbeat & Fail-Safe Watchdog:** The remote CAN node must broadcast endstop status updates at least every **500 ms**. If CAN communication goes silent for more than **1500 ms** (timeout), the bridge automatically forces the output pins into a **fail-safe triggered (closed)** state. Because the endstop is virtually closed, the axis is prevented from driving into the physical hard stop if the CAN bus cable disconnects during homing.
 
 ### CAN Protocol Table
 
